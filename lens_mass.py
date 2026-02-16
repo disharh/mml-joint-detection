@@ -1,4 +1,5 @@
 import numpy as np
+import os
 from astropy.cosmology import Planck18 as cosmo
 from astropy import units as u, constants as c
 from scipy.special import gamma
@@ -7,6 +8,7 @@ import scipy.stats as scs
 from chebtools import *
 from pathlib import Path
 from numpy.polynomial import chebyshev as cheb
+from ler.lens_galaxy_population import LensGalaxyParameterDistribution
 
 ## Assumes the Planck18 cosmology (Planck Collaboration 2020).
 
@@ -284,6 +286,59 @@ def sample_sigmaz(size=1, weighted=False, tables_dir=None, rng=None):
 
     return sigma, z
 
+def sample_sigmaz_ler(size=1):
+    """
+    Sample lens velocity dispersions and redshifts using LeR.
+
+    Parameters
+    ----------
+    size : int
+        Number of samples to generate (default 1000).
+
+    Returns
+    -------
+    sigma : np.ndarray
+        Velocity dispersions (km/s).
+    zl : np.ndarray
+        Lens redshifts.
+
+    Notes
+    -----
+    Creates a new interpolator only if 
+    './interpolator_json/source_redshift/source_redshift_0.json' does not exist.
+    """
+     
+    # Path to check for existing interpolator
+    json_path = "./interpolator_json/source_redshift/source_redshift_0.json"
+    create_new_interpolator = not os.path.exists(json_path)
+
+    # Define samplers
+    lens_param_samplers = dict(
+        velocity_dispersion="velocity_dispersion_ewoud"
+    )
+
+    lens_param_samplers_params = {
+        "velocity_dispersion": {
+            "sigma_min": 60,    # km/s
+            "sigma_max": 600    # km/s
+        }
+    }
+
+    # Create LensGalaxyParameterDistribution
+    lens = LensGalaxyParameterDistribution(
+        z_min=0.0,
+        z_max=3.0,
+        lens_param_samplers=lens_param_samplers,
+        lens_param_samplers_params=lens_param_samplers_params,
+        create_new_interpolator=create_new_interpolator
+    )
+
+    # Sample the parameters
+    params = lens.sample_all_routine_epl_shear_intrinsic(size=size)
+    sigma = params["sigma"]
+    zl = params["zl"]
+
+    return sigma, zl
 
 # Ellipticities (Follows Wempe+ 2024)
 

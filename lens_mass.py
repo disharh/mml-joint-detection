@@ -1,7 +1,8 @@
 import numpy as np
 import os
 from astropy.cosmology import Planck18 as cosmo
-from astropy import units as u, constants as c
+from astropy import units as u
+from astropy import constants as c
 from scipy.special import gamma
 import numdifftools as nd
 import scipy.stats as scs
@@ -320,7 +321,7 @@ def sample_sigmaz_ler(size=1):
     lens_param_samplers_params = {
         "velocity_dispersion": {
             "sigma_min": 60,    # km/s
-            "sigma_max": 600    # km/s
+            "sigma_max": 600    # km/s
         }
     }
 
@@ -455,17 +456,6 @@ def sample_lens_position(size=1, lenspos_width=0.05):
     return dx, dy
 
 
-##Use this later for lens simulation
-# --- Lens center ---
-#cx0, cy0 = 0.0, 0.0
-
-# --- Sample unit-cube random numbers for lens position ---
-#u_pos = np.random.rand(2)
-#dx, dy = prior_lenspos(u_pos)
-#lens_center_x = cx0 + dx
-#lens_center_y = cy0 + dy
-
-
 ## Einstein radius
 def einstein_radius(sigma, z_lens, z_source, cosmology=cosmo):
     """
@@ -488,19 +478,16 @@ def einstein_radius(sigma, z_lens, z_source, cosmology=cosmo):
     theta_E : float
         Einstein radius [arcsec].
     """
-    # Convert velocity dispersion to astropy quantity
-    sigma = (sigma * u.km / u.s)
-
     # Angular diameter distances
     D_l = cosmology.angular_diameter_distance(z_lens)
     D_s = cosmology.angular_diameter_distance(z_source)
     D_ls = cosmology.angular_diameter_distance_z1z2(z_lens, z_source)
 
     # Einstein radius in radians
-    theta_E_rad = 4 * np.pi * (sigma / c)**2 * (D_ls / D_s)
+    theta_E_rad = 4 * np.pi * (sigma / c.c.to_value(u.km / u.s))**2 * (D_ls / D_s) * (1 * u.radian)
 
     # Convert to arcseconds
-    theta_E_arcsec = theta_E_rad.to(u.arcsec)
+    theta_E_arcsec = theta_E_rad.to_value(u.arcsec)
 
-    return theta_E_arcsec.value
+    return theta_E_arcsec
 

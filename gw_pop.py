@@ -1,7 +1,7 @@
 import ler
 from ler.gw_source_population import CBCSourceParameterDistribution
 
-def sample_gw_params(size):
+def sample_gw_params(size=1):
     """
     Sample BBH GW parameters (intrinsic + extrinsic) with precessing spins using LeR.
 

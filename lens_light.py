@@ -94,7 +94,7 @@ def sample_FP(sigma, z, ell, apply_kcorr=False, model_mean=None, model_std=None,
     Mr : ndarray
         Absolute r-band magnitude.
     re : ndarray
-        Effective radius [kpc].
+        Effective radius (arcsec).
     k_corr : ndarray
         K-correction needed for app mag calculation.
     """

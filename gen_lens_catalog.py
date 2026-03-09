@@ -14,7 +14,7 @@ from likelihood import *
 
 
 # number of samples
-N_SAMPLES = 1000
+N_SAMPLES = 100
 
 
 detected_rows = []
@@ -124,7 +124,7 @@ for i in range(N_SAMPLES):
     x_gw, y_gw, area, source_x, source_y = sample_gwpos_then_sourcepos(
         kwargs_lens=kwargs_lens,
         kwargs_source=kwargs_source,
-        num_detected_gws=4
+        num_detected_gws=2
     )
 
     # -----------------------------
@@ -274,7 +274,7 @@ for i in range(N_SAMPLES):
 detected_df = pd.DataFrame(detected_rows)
 not_detected_df = pd.DataFrame(not_detected_rows)
 
-detected_df.to_csv("detected_catalog.csv", index=False)
-not_detected_df.to_csv("not_detected_catalog.csv", index=False)
+detected_df.to_csv("detected_catalog_2.csv", index=False)
+not_detected_df.to_csv("not_detected_catalog_2.csv", index=False)
 
 print("Catalogs saved.")

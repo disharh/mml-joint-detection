@@ -202,8 +202,8 @@ def simulate_lensed_gw_detection(
     
     # Solve lens equation
     ip = ImageProperties(
-        n_min_images=num_required_images,
-        n_max_images=4,
+        n_min_images=2,
+        n_max_images=num_required_images,
         lens_model_list=['EPL_NUMBA', 'SHEAR'],
         cosmology=cosmology
     )

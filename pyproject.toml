@@ -13,4 +13,5 @@ dependencies = [
     "numdifftools>=0.9.42",
     "numpy>=2.4.3",
     "pandas>=3.0.1",
+    "torch==2.5.0",
 ]

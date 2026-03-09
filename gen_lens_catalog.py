@@ -278,3 +278,6 @@ detected_df.to_csv("detected_catalog_2.csv", index=False)
 not_detected_df.to_csv("not_detected_catalog_2.csv", index=False)
 
 print("Catalogs saved.")
+
+# The catalog includes:
+# p(theta,phi_mass,phi_source_light,phi_lens_light)

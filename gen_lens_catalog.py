@@ -12,14 +12,11 @@ from gw_pop import *
 from bbh_pos import *
 from likelihood import *
 
-
 # number of samples
 N_SAMPLES = 100
 
-
 detected_rows = []
 not_detected_rows = []
-
 
 for i in range(N_SAMPLES):
 
@@ -153,7 +150,6 @@ for i in range(N_SAMPLES):
         verbose=True
     )
 
-
     PdetGW = simulate_lensed_gw_detection(
         gw_prms,
         lens_params,
@@ -266,7 +262,6 @@ for i in range(N_SAMPLES):
     else:
         not_detected_rows.append(row)
         print("Not detected")
-
 
 # -----------------------------
 # SAVE CATALOGS

@@ -1,0 +1,5 @@
+outs:
+- md5: 595906097d18f3f19d5e761ae1ece299
+  size: 261372
+  hash: md5
+  path: not_detected_catalog.csv

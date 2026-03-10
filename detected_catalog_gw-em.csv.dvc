@@ -1,0 +1,5 @@
+outs:
+- md5: 82cfba8d40625bc794888f8405fabf06
+  size: 969
+  hash: md5
+  path: detected_catalog_gw-em.csv

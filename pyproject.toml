@@ -1,0 +1,14 @@
+[project]
+name = "multimessenger-search"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "denmarf>=0.3.2",
+    "lenstronomy>=1.13.5",
+    "ler>=0.5.9",
+    "matplotlib>=3.10.8",
+    "numpy>=2.4.3",
+    "scipy>=1.17.1",
+]

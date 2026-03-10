@@ -12,14 +12,11 @@ from gw_pop import *
 from bbh_pos import *
 from likelihood import *
 
-
 # number of samples
 N_SAMPLES = 100
 
-
 detected_rows = []
 not_detected_rows = []
-
 
 for i in range(N_SAMPLES):
 
@@ -153,7 +150,6 @@ for i in range(N_SAMPLES):
         verbose=True
     )
 
-
     PdetGW = simulate_lensed_gw_detection(
         gw_prms,
         lens_params,
@@ -267,7 +263,6 @@ for i in range(N_SAMPLES):
         not_detected_rows.append(row)
         print("Not detected")
 
-
 # -----------------------------
 # SAVE CATALOGS
 # -----------------------------
@@ -278,3 +273,6 @@ detected_df.to_csv("detected_catalog_2.csv", index=False)
 not_detected_df.to_csv("not_detected_catalog_2.csv", index=False)
 
 print("Catalogs saved.")
+
+# The catalog includes:
+# p(theta,phi_mass,phi_source_light,phi_lens_light)

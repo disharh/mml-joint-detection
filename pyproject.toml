@@ -7,6 +7,7 @@ requires-python = ">=3.13"
 dependencies = [
     "astropy>=7.2.0",
     "denmarf>=0.3.2",
+    "dvc-ssh>=4.2.2",
     "jupyter>=1.1.1",
     "lenstronomy>=1.13.5",
     "ler>=0.5.9",

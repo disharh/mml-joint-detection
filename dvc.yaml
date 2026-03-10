@@ -1,0 +1,7 @@
+stages:
+  lenscat:
+    cmd: uv run gen_lens_catalog.py
+    deps:
+    - gen_lens_catalog.py
+    outs:
+    - not_detected_catalog_2.csv detected_catalog_2.csv

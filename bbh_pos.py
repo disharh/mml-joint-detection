@@ -52,29 +52,29 @@ def sample_gwpos_then_sourcepos(kwargs_lens, kwargs_source, num_detected_gws):
         Lens parameters in lenstronomy format for model ['EPL', 'SHEAR'] 
     kwargs_source : dict
         Source galaxy parameters containing:
-            - source_re : float
+            - re_source : float
                 Effective radius of the source galaxy.
-            - source_nsersic : float
+            - nsersic_source : float
                 Sersic index of the source galaxy.
-            - e1_src : float
+            - e1_source : float
                 First component of source ellipticity.
-            - e2_src : float
+            - e2_source : float
                 Second component of source ellipticity.
     num_detected_gws : int
         Number of GW images.
 
     Returns
     -------
-    x_gw : np.float64
-        Physical coordinate of the sampled GW x-position.
-    y_gw : np.float64
-        Physical coordinate of the sampled GW y-position.
-    area : np.float64
-        Area of the sampled polygon.
-    source_x : np.float64
-        Physical coordinate of the sampled source galaxy x-position.
-    source_y : np.float64
-        Physical coordinate of the sampled source galaxy y-position.
+    x_gw : float
+        Source-plane GW position (arcsec).
+    y_gw : float
+        Source-plane GW position (arcsec).
+    area : float
+        Area of the caustic polygon (arcsec^2).
+    x_source : float
+        Source-plane galaxy position (arcsec).
+    y_source : float
+        Source-plane galaxy position (arcsec).
 
     
     Example
@@ -95,19 +95,19 @@ def sample_gwpos_then_sourcepos(kwargs_lens, kwargs_source, num_detected_gws):
     ]
 
     kwargs_source = {
-        "source_re": 0.5,        
-        "source_nsersic": 2.5,   
-        "e1_src": 0.1,
-        "e2_src": 0.05           
+        "re_source": 0.5,        
+        "nsersic_source": 2.5,   
+        "e1_source": 0.1,
+        "e2_source": 0.05           
     }
 
-    x_gw, y_gw, area, source_x, source_y = sample_gwpos_then_sourcepos(
+    x_gw, y_gw, area, x_source, y_source = sample_gwpos_then_sourcepos(
         kwargs_lens=kwargs_lens, 
         kwargs_source=kwargs_source, 
         num_detected_gws=2
     )
-        """
-    
+    """
+
     # Sample random unit-cube numbers for GW and source positions
     u_x_gw, u_y_gw = np.random.rand(2)
     u_x_gal, u_y_gal = np.random.rand(2)
@@ -116,22 +116,24 @@ def sample_gwpos_then_sourcepos(kwargs_lens, kwargs_source, num_detected_gws):
     poly_to_sample = get_caustics(kwargs_lens, num_detected_gws)
 
     # Sample GW position within the polygon
-    (x_gw, y_gw), area = sample_polygon_single(poly_to_sample, np.array([u_x_gw, u_y_gw]))
-
-    # Extract source parameters
-    source_re = kwargs_source['source_re']
-    source_nsersic = kwargs_source['source_nsersic']
-    e1_src = kwargs_source['e1_src']
-    e2_src = kwargs_source['e2_src']
+    (x_gw, y_gw), area = sample_polygon_single(
+        poly_to_sample, np.array([u_x_gw, u_y_gw]))
 
     # Sample source galaxy position in Sersic coordinates around GW
-    source_x, source_y = SersicTransform.sample_sersic_cart(
+    x_source, y_source = SersicTransform.sample_sersic_cart(
         [u_x_gal, u_y_gal],
-        source_re,
-        source_nsersic,
-        e1_src,
-        e2_src,
+        kwargs_source['re_source'],
+        kwargs_source['nsersic_source'],
+        kwargs_source['e1_source'],
+        kwargs_source['e2_source'],
         x_gw,
         y_gw
     )
-    return np.float64(x_gw), np.float64(y_gw), np.float64(area), np.float64(source_x), np.float64(source_y)
+
+    return (
+        float(x_gw),
+        float(y_gw),
+        float(area),
+        float(x_source),
+        float(y_source),
+    )

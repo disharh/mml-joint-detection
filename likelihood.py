@@ -7,6 +7,9 @@ from astropy import units as u
 from ler.image_properties import ImageProperties
 from gwsnr import GWSNR
 from lenstronomy.LensModel.lens_model import LensModel
+from lenstronomy.LensModel.Solver.lens_equation_solver import LensEquationSolver
+from astropy.cosmology import Planck18 as cosmo
+from gw_pop import *
 
 def lik_cross_sec(area):
     """
@@ -26,40 +29,6 @@ def lik_cross_sec(area):
     prob = np.log(area * (1 * u.arcsec).to_value(u.radian) ** 2 / (4 * np.pi))
     return prob
 
-def lik_sourcepop(sgal, usenorm=False):
-    """
-    Computes the source population log-likelihood for a source galaxy sample.
-
-    Parameters
-    ----------
-    sgal : ndarray, shape (N, 7)
-        Source galaxy sample. Columns correspond to:
-            0 : m_VIS_Euclid
-            1 : log10_mStar
-            2 : Re_maj
-            3 : z
-            4 : q
-            5 : n_sersic
-            6 : log_p_gal (from MAF)
-
-    use_norm : bool, optional
-        If True, include the normalization constant A_M* in log space:
-            log p_host = log p_gal + log M_* + log(Am_star)
-
-    Returns
-    -------
-    logp : ndarray, shape (N,)
-        Log-likelihood of the source galaxy to emit a GW
-    """
-    Am_star = 1.3e-16  #eqn 21 from Wempe+ 2024
-    log_p_gal = sgal[:, 6]
-    M_star = 10 ** sgal[:, 1]
-    if usenorm:
-        logp = log_p_gal + np.log(M_star) + np.log(Am_star)
-    else:
-        logp = log_p_gal + np.log(M_star) 
-
-    return logp
 
 def lik_img(
     mag_lens, lens_reff, pos_lens,
@@ -108,29 +77,29 @@ def lik_img(
     return True, 0.0
 
 
-
 def simulate_lensed_gw_detection(
     gw_params,
-    lens_params,
-    num_required_images=2,
-    num_detected_gws=2,
+    kwargs_lens,
+    z_source,
+    z_lens,
+    num_detected_gws,
     snr_threshold=7.0,
-    cosmology=None,
     waveform_approximant="IMRPhenomXPHM"):
 
     """
     Simulate detection of a strongly lensed gravitational-wave (GW) event.
 
     This function does following steps:
-    1) Solves the lens equation for the given lens model
+    1) Solves the lens equation using lenstronomy assuming EPL_NUMBA + SHEAR lens model and Planck18 cosmology
     2) Computes effective lensed GW parameters for each image
-    3) Calculates detector SNRs for each image
+    3) Calculates detector SNRs for each image using GWSNR package
     4) Applies detection criteria based on network SNR threshold
 
     Parameters
     ----------
     gw_params : dict
         Dictionary containing intrinsic GW source parameters. Expected keys include:
+            - x_gw, y_gw     : Angular source plane GW positions in arsecs
             - mass_1, mass_2 : Detector frame component masses (solar masses)
             - theta_jn       : Inclination angle
             - psi            : Polarization angle
@@ -143,32 +112,22 @@ def simulate_lensed_gw_detection(
             - phi_jl         : Azimuthal angle between total angular momentum and line of sight
         All parameters are expected in array form consistent with GWSNR input.
 
-    lens_params : dict
-        Dictionary containing lens model parameters required by the
-        ImageProperties class. Typically includes:
-            - zl, zs          : Lens and source redshift
-            - theta_E         : Einstein radius
-            - q               : Axis ratio
-            - phi             : Position angle
-            - gamma           : Power-law slope
-            - gamma1, gamma2  : External shear components
+    kwargs_lens : list of dict
+        Lens parameters in lenstronomy format for model ['EPL', 'SHEAR']
 
-    num_required_images : int, optional
-        Minimum number of images required from the lens equation solver
-        to proceed with GW parameter computation. Default is 2.
+    z_source : float
+        Source galaxy redshift
 
-    num_detected_gws : int, optional
+    z_lens : float
+        Lens galaxy redshift
+
+    num_detected_gws : int
         Minimum number of images that must pass the SNR threshold
-        for the event to be considered detected. Default is 2.
+        for the event to be considered detected. 
 
     snr_threshold : float, optional
         Network optimal SNR threshold for declaring detection
         of an individual image. Default is 7.0.
-
-    cosmology : astropy.cosmology object, optional
-        Cosmology object used for distance calculations inside
-        the lensing framework. If None, a default cosmology
-        inside ImageProperties is used.
 
     waveform_approximant : str, optional
         Waveform model used by GWSNR to compute optimal SNR.
@@ -196,40 +155,41 @@ def simulate_lensed_gw_detection(
 
     lensed_gw_params : dict
         Dictionary of effective GW parameters after lensing.
-        If more images pass the SNR threshold than required,
-        only the highest-SNR images are retained.
+
     """
-    
+    x_gw, y_gw = gw_params['x_gw'], gw_params['y_gw']
+
     # Solve lens equation
-    ip = ImageProperties(
-        n_min_images=2,
-        n_max_images=num_required_images,
-        lens_model_list=['EPL_NUMBA', 'SHEAR'],
-        cosmology=cosmology
-    )
+    lensModel = LensModel(lens_model_list=['EPL_NUMBA', 'SHEAR'], cosmo=cosmo)
+    lensEqs = LensEquationSolver(lensModel)
+    x_image, y_image = lensEqs.image_position_from_source(x_gw, y_gw, kwargs_lens, solver='analytical')
+    n_images= len(x_image)
 
-    try:
-        lensed_output = ip.image_properties(lens_params)
-    except Exception as e:
-        print("Lens equation solver failed:", e)
+    if n_images> 5:
+        print("Lens equation solver failed: 5-image solution!")
         return False, None, None
 
-    if lensed_output['n_images'][0] < num_required_images:
+    if n_images== 0:
+        print("Lens equation solver failed: 0-image solution!")
         return False, None, None
-
-    # Produce effective GW parameters
-    try:
-        lensed_gw_params = ip.produce_effective_params(
-            {**gw_params, **lensed_output}
-        )
-    except Exception as e:
-        print("Effective parameter computation failed:", e)
-        return False, None
-
-    n_images = int(lensed_gw_params['n_images'][0])
+    
+    if n_images<num_detected_gws:
+        print("Number of images less than required!")
+        return False, None, None
+    
+    magnifications = lensModel.magnification(x=x_image, y=y_image, kwargs=kwargs_lens)
+    lensModel_withcosmo = LensModel(['EPL_NUMBA', 'SHEAR'], cosmo=cosmo, z_lens=z_lens, z_source=z_source)
+    delays = lensModel_withcosmo.arrival_time(x_image=x_image, y_image=y_image, kwargs_lens=kwargs_lens) #units=days
+    delays_sec = (delays - delays.min()) * 86400.0
+    hessian = lensModel.hessian(x_image, y_image, kwargs_lens)
+    lensed_gw_params = compute_effective_gw_params(gw_params, magnifications, delays, hessian, x_image, y_image,x_gw, y_gw)
+    lensed_gw_params['magnifications'] = magnifications
+    lensed_gw_params['time_delays'] = delays_sec
+    lensed_gw_params['x_image'] = x_image
+    lensed_gw_params['y_image'] = y_image
+    lensed_gw_params['n_images'] = n_images
 
     # Compute SNRs
-
     snr_calc = GWSNR(waveform_approximant=waveform_approximant)
 
     snr_net = []
@@ -267,6 +227,11 @@ def simulate_lensed_gw_detection(
     snr_L1  = np.array(snr_L1)
     snr_V1  = np.array(snr_V1)
 
+    # Detection logic
+    detected_mask = snr_net >= snr_threshold
+    detected_indices = np.where(detected_mask)[0]
+    n_detected = len(detected_indices)
+
     snr_dict = {
         'optimal_snr_net': snr_net,
         'optimal_snr_H1': snr_H1,
@@ -274,40 +239,33 @@ def simulate_lensed_gw_detection(
         'optimal_snr_V1': snr_V1
     }
 
-    # Detection logic
-    detected_mask = snr_net >= snr_threshold
-    n_detected = detected_mask.sum()
-
     if n_detected < num_detected_gws:
         return False, snr_dict, lensed_gw_params
 
-    # If more pass than required,keep highest SNR ones
+    # Select exactly num_detected_gws images according to SNR 
     if n_detected > num_detected_gws:
-        sorted_idx = np.argsort(snr_net)[::-1]
-        keep_idx = sorted_idx[:num_detected_gws]
+        sorted_detected = detected_indices[np.argsort(snr_net[detected_indices])[::-1]]
+        selected_indices = sorted_detected[:num_detected_gws]
     else:
-        keep_idx = np.where(detected_mask)[0]
+        selected_indices = detected_indices
 
+    # Filter SNRs
+    snr_dict = {
+        'optimal_snr_net': snr_net[selected_indices],
+        'optimal_snr_H1': snr_H1[selected_indices],
+        'optimal_snr_L1': snr_L1[selected_indices],
+        'optimal_snr_V1': snr_V1[selected_indices]
+    }
 
-    image_keys = [
-        'x0_image_positions',
-        'x1_image_positions',
-        'magnifications',
-        'time_delays',
-        'image_type',
-        'effective_luminosity_distance',
-        'effective_geocent_time',
-        'effective_phase',
-        'effective_ra',
-        'effective_dec'
-    ]
+    # Filter lensed GW params
+    for key, val in lensed_gw_params.items():
+        if isinstance(val, np.ndarray):
+            if val.ndim == 2 and val.shape[1] == n_images:
+                lensed_gw_params[key] = val[:, selected_indices]
+            elif val.ndim == 1 and val.shape[0] == n_images:
+                lensed_gw_params[key] = val[selected_indices]
 
-    for key in image_keys:
-        arr = lensed_gw_params[key]
-        lensed_gw_params[key] = arr[:, keep_idx]
+    # Update number of images
+    lensed_gw_params['n_images'] = len(selected_indices)
 
-    lensed_gw_params['n_images'][0] = len(keep_idx)
-
-    snr_dict = {k: v[keep_idx] for k, v in snr_dict.items()}
-    return True, snr_dict, lensed_gw_params
-
+    return True, snr_dict, lensed_gw_params      

@@ -4,6 +4,8 @@ from astropy import units as u, constants as c
 from scipy.special import gamma
 import scipy.stats as scs
 from sklearn.preprocessing import PolynomialFeatures
+from lens_mass import *
+from lenstronomy.Util import param_util
 
 ##Lens light profile
 
@@ -156,38 +158,57 @@ def sample_FP(sigma, z, ell, apply_kcorr=False, model_mean=None, model_std=None,
     return Mr, re, k_corr
 
 
-#To simulate light profile (as sersic ellipse) in Herculens I need :
-    
-#:param amp: surface brightness/amplitude value at the half light radius  --> how do i get this? --> found this in EW,s code 'amp': 10 ** (-(mag_lens - ZP) / 2.5)
-#mag_lens is actually apparent mag, ZP you get from the detector  ZP = 25.1209 # Euclid photometric zeropoint
-    
-#:param R_sersic: semi-major axis half light radius  --> comes from prev function
-#:param n_sersic: Sersic index  --> fixed at 4
-#:param e1: eccentricity parameter --> already sampled
-#:param e2: eccentricity parameter --> already sampled
-#:param center_x: center in x-coordinate --> already sampled
-#:param center_y: center in y-coordinate --> already sampled
+def sample_lens_params(size=1):
 
+    sigma_lens, z_lens = sample_sigmaz_ler(size)
 
+    ell_light_lens, theta_light_lens, ell_mass_lens, theta_mass_lens = sample_ellipticity_theta(
+        sigma=sigma_lens,
+        size=size
+    )
 
+    gamma_slope = sample_slope_gamma(size)
 
-# Derive apparent mag from abs mag
-# d.m_lens_obs = d.lens_Mr + 5 * np.log10((cosmo.luminosity_distance(d.lens_z)/(10 * u.pc)).to_value(1)) + d.lens_kcor
+    gamma_shear, phi_shear = sample_shear(size)
 
+    x_lens, y_lens = sample_lens_position(size)
 
-#Something to refer to:
-#def get_kwargs(self, d):
-#        d.theta_ein = 4 * np.pi * (d.lens_sigma / c.c.to_value(u.km / u.s)) ** 2 * (1 * u.radian).to_value(u.arcsec)
-#        d.theta_ein *= (cosmo.angular_diameter_distance_z1z2(d.lens_z, d.source_z) / cosmo.angular_diameter_distance(
-# #           d.source_z)).to_value(1)                                          --> i have a function for this in lens_mass.py (probably make a separate derived params py file)
-#
-#        d.e1, d.e2 = param_util.phi_q2_ellipticity(phi=d.lens_theta_ell, q=1 - d.lens_ell)                          --> herculens implementation
-#        d.e1_src, d.e2_src = param_util.phi_q2_ellipticity(phi=d.source_theta_ell, q=d.source_q)                     --> herculens implementation
-#        d.gamma1, d.gamma2 = param_util.shear_polar2cartesian(d.lens_theta_shear, d.lens_gamma_shear)                  --> herculens implementation
-#        if not self.sample_nsersic_lens:
-#            d.lens_nsersic = 4.
-#        if not self.sample_nsersic_source:
- #           d.source_nsersic = 1.
-#        kwargs_lens = [{**({'gamma': d.lens_gammamass} if self.pemd else {}), 'theta_E': d.theta_ein, 'e1': d.e1, 'e2': d.e2, 'center_x': d.lens_x, 'center_y': d.lens_y},
-#                       {'gamma1': d.gamma1, 'gamma2': d.gamma2, 'ra_0': d.lens_x, 'dec_0': d.lens_y}]
-#        return kwargs_lens
+    Mr, re, k_corr = sample_FP(sigma_lens, z_lens, ell_light_lens)
+
+    mag_lens = Mr + 5 * np.log10(
+        (cosmo.luminosity_distance(z_lens) / (10 * u.pc)).to_value(1)
+    ) + k_corr
+
+    e1, e2 = param_util.phi_q2_ellipticity(
+        phi= theta_mass_lens,
+        q= 1 - ell_mass_lens
+    )
+
+    gamma1, gamma2 = param_util.shear_polar2cartesian(
+        phi=phi_shear,
+        gamma=gamma_shear
+    )
+
+    lens_params = {
+        'sigma_lens' : sigma_lens,
+        'z_lens': z_lens,
+        'q_lens': 1 - ell_mass_lens,
+        'ell_mass_lens' : ell_mass_lens,
+        'theta_mass_lens': theta_mass_lens,
+        'ell_light_lens' : ell_mass_lens,
+        'theta_light_lens': theta_mass_lens,
+        'mag_lens' : mag_lens,
+        'x_lens' : x_lens,
+        'y_lens' : y_lens,
+        're_lens' : re,
+        'e1_lens' : e1,
+        'e2_lens' : e2,
+        'gamma': gamma_slope,
+        'gamma1': gamma1,
+        'gamma2': gamma2
+    }
+
+    if size == 1:
+        lens_params = {k: float(v[0]) for k, v in lens_params.items()}
+
+    return lens_params

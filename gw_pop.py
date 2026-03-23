@@ -101,28 +101,28 @@ def compute_effective_gw_params(
     """
     morse_phase = compute_morse_phase(hessian)
 
-    dL = gw_params["luminosity_distance"][:, np.newaxis]  
-    t0 = gw_params["geocent_time"][:, np.newaxis]
-    phi = gw_params["phase"][:, np.newaxis]
-    ra = gw_params["ra"][:, np.newaxis]
-    dec = gw_params["dec"][:, np.newaxis]
+    dL = gw_params["luminosity_distance"]  
+    t0 = gw_params["geocent_time"]
+    phi = gw_params["phase"]
+    ra = gw_params["ra"]
+    dec = gw_params["dec"]
 
     # lensing quantities
-    mu = np.abs(magnifications)[np.newaxis, :] 
-    dt = delays[np.newaxis, :]                
-    morse = morse_phase[np.newaxis, :]         
+    mu = np.abs(magnifications)  
+    dt = delays                  
+    morse = morse_phase          
 
     # positions
     arcsec_to_rad = 1.0 / 206265.0
-    dx = (x_image[np.newaxis, :] - x_gw) * arcsec_to_rad
-    dy = (y_image[np.newaxis, :] - y_gw) * arcsec_to_rad      
-    cosdec = np.cos(dec)  
+    dx = (x_image - x_gw) * arcsec_to_rad
+    dy = (y_image - y_gw) * arcsec_to_rad
+    cosdec = np.cos(dec) 
 
-    # effective parameters 
-    gw_params["effective_luminosity_distance"] = dL / np.sqrt(mu)
-    gw_params["effective_geocent_time"] = t0 + dt
-    gw_params["effective_phase"] = phi - morse
-    gw_params["effective_ra"] = ra + dx / cosdec
-    gw_params["effective_dec"] = dec + dy
+    # effective parameters
+    gw_params["effective_luminosity_distance"] = (dL / np.sqrt(mu)).reshape(-1)
+    gw_params["effective_geocent_time"] = (t0 + dt).reshape(-1)
+    gw_params["effective_phase"] = (phi - morse).reshape(-1)
+    gw_params["effective_ra"] = (ra + dx / cosdec).reshape(-1)
+    gw_params["effective_dec"] = (dec + dy).reshape(-1)
 
     return gw_params

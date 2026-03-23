@@ -259,7 +259,7 @@ def sample_sigmaz(size=1, weighted=False, tables_dir=None, rng=None):
         cg_getx, cg_getz, lims = uniform_sampler_from_2dpdf(
             pdf_func,
             [[60, 600], [0., 3.]],   # σ,z limits
-            res_cg=[60, 80] #res_cg=[300,400] : problematic memory allocation
+            res_cg=[100, 120] #res_cg=[300,400] : problematic memory allocation
         )
 
         np.savez_compressed(
@@ -478,6 +478,9 @@ def einstein_radius(sigma, z_lens, z_source, cosmology=cosmo):
     theta_E : float
         Einstein radius [arcsec].
     """
+    if z_source <= z_lens:
+        raise ValueError("z_source must be greater than z_lens for lensing.")
+    
     # Angular diameter distances
     D_l = cosmology.angular_diameter_distance(z_lens)
     D_s = cosmology.angular_diameter_distance(z_source)
@@ -489,5 +492,5 @@ def einstein_radius(sigma, z_lens, z_source, cosmology=cosmo):
     # Convert to arcseconds
     theta_E_arcsec = theta_E_rad.to_value(u.arcsec)
 
-    return theta_E_arcsec
+    return float(theta_E_arcsec)
 

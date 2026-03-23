@@ -158,9 +158,13 @@ def sample_FP(sigma, z, ell, apply_kcorr=False, model_mean=None, model_std=None,
     return Mr, re, k_corr
 
 
-def sample_lens_params(size=1):
-
-    sigma_lens, z_lens = sample_sigmaz_ler(size)
+def sample_lens_params(size=1, sigmazfn='ler'):
+    if sigmazfn=='ewoud':
+        sigma_lens, z_lens = sample_sigmaz(size)
+    elif sigmazfn=='ler':
+        sigma_lens, z_lens = sample_sigmaz_ler(size)
+    else:
+        raise ValueError("Invalid sigmazfn! Choose between 'ewoud' and 'ler'.")
 
     ell_light_lens, theta_light_lens, ell_mass_lens, theta_mass_lens = sample_ellipticity_theta(
         sigma=sigma_lens,

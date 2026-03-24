@@ -15,7 +15,7 @@ from likelihood import *
 from utils import *
 
 num_gw = 2
-n_systems = 2
+n_systems = 10
 n_det = 0
 
 max_system_attempts = 50
@@ -23,6 +23,7 @@ max_lens_attempts = 100
 max_gw_attempts = 100
 
 system_attempts = 0
+tstart = time.perf_counter()
 
 while n_det < n_systems and system_attempts < max_system_attempts:
     system_attempts += 1
@@ -55,6 +56,7 @@ while n_det < n_systems and system_attempts < max_system_attempts:
 
         if theta_ein >= 0.33:
             lens_prms['theta_ein'] = theta_ein
+            lens_success = True
             break
 
     timings["lens_sampling_time"] = time.perf_counter() - t0
@@ -159,7 +161,7 @@ while n_det < n_systems and system_attempts < max_system_attempts:
         "timings": timings
         }
 
-        filename = f'System_{n_det}.yaml'
+        filename = f'lens_catalog/two_images/System_{n_det}.yaml'
         with open(filename, "w") as f:
             yaml.dump(data, f, sort_keys=False, default_flow_style=False)
     else:
@@ -171,3 +173,6 @@ if n_det < n_systems:
     print(f"Detected {n_det}/{n_systems} systems")
 else:
     print("\nAll systems successfully generated!")
+
+t_code = time.perf_counter() - tstart
+print(f'Total code execution time: {t_code}')

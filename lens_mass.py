@@ -294,7 +294,7 @@ def sample_sigmaz_ler(size=1):
     Parameters
     ----------
     size : int
-        Number of samples to generate (default 1000).
+        Number of samples to generate (default 1).
 
     Returns
     -------
@@ -329,6 +329,7 @@ def sample_sigmaz_ler(size=1):
     lens = LensGalaxyParameterDistribution(
         z_min=0.0,
         z_max=3.0,
+        cosmology=cosmo,
         lens_param_samplers=lens_param_samplers,
         lens_param_samplers_params=lens_param_samplers_params,
         create_new_interpolator=create_new_interpolator
@@ -494,3 +495,45 @@ def einstein_radius(sigma, z_lens, z_source, cosmology=cosmo):
 
     return float(theta_E_arcsec)
 
+
+def einstein_radius_vec(sigma, z_lens, z_source, cosmology=cosmo):
+    """
+    Vectorized Einstein radius computation.
+
+    Parameters
+    ----------
+    sigma : float or array-like
+        Velocity dispersion [km/s]
+    z_lens : float or array-like
+        Lens redshift
+    z_source : float or array-like
+        Source redshift (must be > z_lens elementwise)
+    cosmology : astropy.cosmology
+        Cosmology object
+
+    Returns
+    -------
+    theta_E : float or np.ndarray
+        Einstein radius in arcsec
+    """
+
+    sigma = np.asarray(sigma)
+    z_lens = np.asarray(z_lens)
+    z_source = np.asarray(z_source)
+
+    # Ensure valid lensing configuration (vectorized check)
+    if np.any(z_source <= z_lens):
+        raise ValueError("All elements must satisfy z_source > z_lens")
+
+    # Angular diameter distances (vectorized in astropy)
+    D_l = cosmology.angular_diameter_distance(z_lens)
+    D_s = cosmology.angular_diameter_distance(z_source)
+    D_ls = cosmology.angular_diameter_distance_z1z2(z_lens, z_source)
+
+     # Einstein radius in radians
+    theta_E_rad = 4 * np.pi * (sigma / c.c.to_value(u.km / u.s))**2 * (D_ls / D_s) * (1 * u.radian)
+
+    # Convert to arcseconds
+    theta_E_arcsec = theta_E_rad.to_value(u.arcsec)
+
+    return theta_E_arcsec

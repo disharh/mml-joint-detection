@@ -137,3 +137,45 @@ def sample_gwpos_then_sourcepos(kwargs_lens, kwargs_source, num_detected_gws):
         float(x_source),
         float(y_source),
     )
+
+def sample_gwpos_then_sourcepos_batch(
+    kwargs_lens,
+    kwargs_source,
+    num_detected_gws,
+    size=50
+):
+    """
+    Vectorised sampling of GW + source positions.
+    Returns arrays of length `size`.
+    """
+
+    # ----------------------------------
+    # 1. Get caustic polygon (once!)
+    # ----------------------------------
+    poly = get_caustics(kwargs_lens, num_detected_gws)  # shape (2, Npoly)
+
+    # ----------------------------------
+    # 2. Uniform samples
+    # ----------------------------------
+    u = np.random.rand(2, size)        # for GW
+    u_gal = np.random.rand(2, size)    # for source
+
+    # ----------------------------------
+    # 3. Vectorised polygon sampling
+    # ----------------------------------
+    x_gw, y_gw, area = sample_polygon_vectorized(poly, u)
+
+    # ----------------------------------
+    # 4. Vectorised Sersic sampling
+    # ----------------------------------
+    x_source, y_source = SersicTransform.sample_sersic_cart(
+        u_gal,
+        kwargs_source['re_source'],
+        kwargs_source['nsersic_source'],
+        kwargs_source['e1_source'],
+        kwargs_source['e2_source'],
+        x_gw,
+        y_gw
+    )
+
+    return x_gw, y_gw, area, x_source, y_source

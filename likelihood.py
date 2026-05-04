@@ -162,27 +162,55 @@ def simulate_lensed_gw_detection(
     # Solve lens equation
     lensModel = LensModel(lens_model_list=['EPL_NUMBA', 'SHEAR'], cosmo=cosmo)
     lensEqs = LensEquationSolver(lensModel)
-    x_image, y_image = lensEqs.image_position_from_source(x_gw, y_gw, kwargs_lens, solver='analytical')
-    n_images= len(x_image)
+    x_image, y_image = lensEqs.image_position_from_source(
+        x_gw, y_gw, kwargs_lens, solver='analytical'
+    )
 
-    if n_images> 5:
+    n_images = len(x_image)
+
+    if n_images > 5:
         print("Lens equation solver failed: 5-image solution!")
         return False, None, None
 
-    if n_images== 0:
+    if n_images == 0:
         print("Lens equation solver failed: 0-image solution!")
         return False, None, None
     
-    if n_images<num_detected_gws:
+    if n_images < num_detected_gws:
         print("Number of images less than required!")
         return False, None, None
     
-    magnifications = lensModel.magnification(x=x_image, y=y_image, kwargs=kwargs_lens)
-    lensModel_withcosmo = LensModel(['EPL_NUMBA', 'SHEAR'], cosmo=cosmo, z_lens=z_lens, z_source=z_source)
-    delays = lensModel_withcosmo.arrival_time(x_image=x_image, y_image=y_image, kwargs_lens=kwargs_lens) #units=days
+    magnifications = lensModel.magnification(
+        x=x_image, y=y_image, kwargs=kwargs_lens
+    )
+
+    lensModel_withcosmo = LensModel(
+        ['EPL_NUMBA', 'SHEAR'],
+        cosmo=cosmo,
+        z_lens=z_lens,
+        z_source=z_source
+    )
+
+    delays = lensModel_withcosmo.arrival_time(
+        x_image=x_image,
+        y_image=y_image,
+        kwargs_lens=kwargs_lens
+    )
+
     delays_sec = (delays - delays.min()) * 86400.0
     hessian = lensModel.hessian(x_image, y_image, kwargs_lens)
-    lensed_gw_params = compute_effective_gw_params(gw_params, magnifications, delays, hessian, x_image, y_image,x_gw, y_gw)
+
+    lensed_gw_params = compute_effective_gw_params(
+        gw_params,
+        magnifications,
+        delays,
+        hessian,
+        x_image,
+        y_image,
+        x_gw,
+        y_gw
+    )
+
     lensed_gw_params['magnifications'] = magnifications
     lensed_gw_params['time_delays'] = delays_sec
     lensed_gw_params['x_image'] = x_image
@@ -197,24 +225,39 @@ def simulate_lensed_gw_detection(
     snr_L1 = []
     snr_V1 = []
 
+
+    def _s(x):
+        return np.atleast_1d(x)[0]
+
+    mass_1 = _s(lensed_gw_params['mass_1'])
+    mass_2 = _s(lensed_gw_params['mass_2'])
+    theta_jn = _s(lensed_gw_params['theta_jn'])
+    psi = _s(lensed_gw_params['psi'])
+    a_1 = _s(lensed_gw_params['a_1'])
+    a_2 = _s(lensed_gw_params['a_2'])
+    tilt_1 = _s(lensed_gw_params['tilt_1'])
+    tilt_2 = _s(lensed_gw_params['tilt_2'])
+    phi_12 = _s(lensed_gw_params['phi_12'])
+    phi_jl = _s(lensed_gw_params['phi_jl'])
+
     for i in range(n_images):
 
         snr_out = snr_calc.optimal_snr(
-            mass_1=lensed_gw_params['mass_1'][0],
-            mass_2=lensed_gw_params['mass_2'][0],
+            mass_1=mass_1,
+            mass_2=mass_2,
             luminosity_distance=lensed_gw_params['effective_luminosity_distance'][i],
-            theta_jn=lensed_gw_params['theta_jn'][0],
-            psi=lensed_gw_params['psi'][0],
+            theta_jn=theta_jn,
+            psi=psi,
             phase=lensed_gw_params['effective_phase'][i],
             geocent_time=lensed_gw_params['effective_geocent_time'][i],
             ra=lensed_gw_params['effective_ra'][i],
             dec=lensed_gw_params['effective_dec'][i],
-            a_1=lensed_gw_params['a_1'][0],
-            a_2=lensed_gw_params['a_2'][0],
-            tilt_1=lensed_gw_params['tilt_1'][0],
-            tilt_2=lensed_gw_params['tilt_2'][0],
-            phi_12=lensed_gw_params['phi_12'][0],
-            phi_jl=lensed_gw_params['phi_jl'][0]
+            a_1=a_1,
+            a_2=a_2,
+            tilt_1=tilt_1,
+            tilt_2=tilt_2,
+            phi_12=phi_12,
+            phi_jl=phi_jl
         )
 
         snr_net.append(snr_out['optimal_snr_net'][0])
@@ -268,4 +311,4 @@ def simulate_lensed_gw_detection(
     # Update number of images
     lensed_gw_params['n_images'] = len(selected_indices)
 
-    return True, snr_dict, lensed_gw_params      
+    return True, snr_dict, lensed_gw_params     

@@ -147,6 +147,41 @@ def sample_polygon_single(poly_to_sample, u):
     x, y = points_sampled[:, 0]
     return (x, y), area
 
+def sample_polygon_vectorized(poly_to_sample, u_batch):
+    """
+    Vectorised version of sample_polygon_single.
+
+    Parameters
+    ----------
+    poly_to_sample : (2, N)
+    u_batch : (2, size)
+
+    Returns
+    -------
+    x : (size,)
+    y : (size,)
+    area : float
+    """
+
+    poly_to_sample = fix_selfintersections3(poly_to_sample)
+
+    queue_ind = np.lexsort((poly_to_sample[1], poly_to_sample[0]), axis=0)
+
+    # IMPORTANT: pass full batch directly
+    points_sampled, area = sample_polygon_nb(
+        poly_to_sample[0],
+        poly_to_sample[1],
+        u_batch.T,   # shape (size, 2)
+        queue_ind
+    )
+
+    # points_sampled shape = (2, size)
+    x = points_sampled[0]
+    y = points_sampled[1]
+
+    assert 0 < area < 1000, f"Bad polygon area: {area}"
+
+    return x, y, area
 
 def sample_polygon(x_, y_, u_, fix_selfint=False):
     """

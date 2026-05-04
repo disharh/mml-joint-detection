@@ -2,7 +2,7 @@ from denmarf import DensityEstimate
 import numpy as np
 from lenstronomy.Util import param_util
 
-def sample_source_galaxy_pars(size=1, model='mstar_weighted'):
+def sample_source_galaxy_pars(size=1, model='non_weighted'):
     """
     Sample source galaxy parameters using a trained Masked Autoregressive Flow model
     and return the samples along with their log probability.
@@ -14,8 +14,8 @@ def sample_source_galaxy_pars(size=1, model='mstar_weighted'):
 
     model : str
         Which trained MAF Model to use. Options:
-        1) mstar_weighted [default] : Model trained to learn stellar mass weighted source population joint distribution
-        2) non_weighted : Model trained to learn intrinsic source population joint distribution
+        1) mstar_weighted  : Model trained to learn stellar mass weighted source population joint distribution
+        2) non_weighted [default]: Model trained to learn intrinsic source population joint distribution
 
     Returns
     -------

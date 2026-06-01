@@ -207,7 +207,7 @@ def calcStoN(mag_lens, lens_reff, pos_lens, lens_model_class, mag_source, kwargs
         image_nolens = imgMod_nolens.image(kwargs_lens=kwargs_lens, kwargs_ps=kwargs_ps)
     if verbose:
         from pprint import pprint
-        pprint({'kwargs_lens': kwargs_lens, 'kwargs_lens_light': kwargs_lens_light, 'kwargs_source': kwargs_source if not approx_ps else None, 'kwargs_ps': kwargs_ps if approx_ps else None})
+        #pprint({'kwargs_lens': kwargs_lens, 'kwargs_lens_light': kwargs_lens_light, 'kwargs_source': kwargs_source if not approx_ps else None, 'kwargs_ps': kwargs_ps if approx_ps else None})
 
     image_tot = image_nolens + image_nosrc
     mag_tot = image_nolens.sum() / 10**((mag_source-ZP)/-2.5)

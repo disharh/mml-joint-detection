@@ -5,6 +5,7 @@ from scipy.special import gamma
 import scipy.stats as scs
 from sklearn.preprocessing import PolynomialFeatures
 from lens_mass import *
+from conditional_sigma_z import *
 from lenstronomy.Util import param_util
 
 
@@ -185,13 +186,18 @@ def sample_FP(sigma, z, ell, apply_kcorr=False, model_mean=None, model_std=None,
     return Mr, re, k_corr
 
 
-def sample_lens_params(size=1, sigmazfn='ler'):
+def sample_lens_params(size=1, sigmazfn='ler', zs=None):
     if sigmazfn=='ewoud':
         sigma_lens, z_lens = sample_sigmaz(size)
     elif sigmazfn=='ler':
         sigma_lens, z_lens = sample_sigmaz_ler(size)
+    elif sigmazfn=='cond_on_zs':
+        if zs==None:
+            raise ValueError("Provide source redshift!")
+        else:
+            sigma_lens, z_lens = sample_sigma_zl_given_zs(zs)
     else:
-        raise ValueError("Invalid sigmazfn! Choose between 'ewoud' and 'ler'.")
+        raise ValueError("Invalid sigmazfn! Choose between 'ewoud' , 'ler' and 'cond_on_zs'. Note: 'cond_on_zs' needs a source redshfit value.")
 
     ell_light_lens, theta_light_lens, ell_mass_lens, theta_mass_lens = sample_ellipticity_theta(
         sigma=sigma_lens,

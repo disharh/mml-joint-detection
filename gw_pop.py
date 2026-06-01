@@ -2,6 +2,12 @@ import ler
 from ler.gw_source_population import CBCSourceParameterDistribution
 import numpy as np
 
+cbc = CBCSourceParameterDistribution(
+        event_type="BBH",
+        spin_zero=False,
+        spin_precession=True,
+    )
+
 def sample_gw_params(size=1):
     """
     Sample BBH GW parameters (intrinsic + extrinsic) with precessing spins using LeR.
@@ -26,11 +32,7 @@ def sample_gw_params(size=1):
     Does not sample redshift, luminosity distance and detector frame masses.
     """
 
-    cbc = CBCSourceParameterDistribution(
-        event_type="BBH",
-        spin_zero=False,
-        spin_precession=True,
-    )
+
 
     params = cbc.sample_gw_parameters(size=size)
 

@@ -11,6 +11,7 @@ from pathlib import Path
 from numpy.polynomial import chebyshev as cheb
 from ler.lens_galaxy_population import LensGalaxyParameterDistribution
 
+
 ## Assumes the Planck18 cosmology (Planck Collaboration 2020).
 
 # Local velocity dispersion function (VDF) (Bernardi 2003/Wempe+ 2024)

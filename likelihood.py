@@ -11,6 +11,8 @@ from lenstronomy.LensModel.Solver.lens_equation_solver import LensEquationSolver
 from astropy.cosmology import Planck18 as cosmo
 from gw_pop import *
 
+snr_calc = GWSNR(waveform_approximant='IMRPhenomXPHM')
+
 def lik_cross_sec(area):
     """
     Compute the log probability that a random GW occurs within a lens caustic of a given area in the source plane.
@@ -83,8 +85,7 @@ def simulate_lensed_gw_detection(
     z_source,
     z_lens,
     num_detected_gws,
-    snr_threshold=7.0,
-    waveform_approximant="IMRPhenomXPHM"):
+    snr_threshold=7.0):
 
     """
     Simulate detection of a strongly lensed gravitational-wave (GW) event.
@@ -105,7 +106,8 @@ def simulate_lensed_gw_detection(
             - psi            : Polarization angle
             - phase          : Orbital phase
             - ra, dec        : Sky location (radians)
-            - geocent_time   : Geocentric merger time
+            - geocent_time   : Geocentric merger timetoo small score
+Unobservable lens
             - a_1, a_2       : Dimensionless spin magnitudes
             - tilt_1, tilt_2 : Spin tilt angles
             - phi_12         : Spin azimuthal angle difference
@@ -177,7 +179,7 @@ def simulate_lensed_gw_detection(
         return False, None, None
     
     if n_images < num_detected_gws:
-        print("Number of images less than required!")
+        print(f"Number of images {n_images} less than required!")
         return False, None, None
     
     magnifications = lensModel.magnification(
@@ -218,8 +220,7 @@ def simulate_lensed_gw_detection(
     lensed_gw_params['n_images'] = n_images
 
     # Compute SNRs
-    snr_calc = GWSNR(waveform_approximant=waveform_approximant)
-
+    
     snr_net = []
     snr_H1 = []
     snr_L1 = []

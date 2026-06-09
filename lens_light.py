@@ -60,22 +60,7 @@ def kcormeanstd(z, Mr_, model_mean, model_std, size=1):
 
 # Fundamental plane (from Wempe+ 2024)
 
-#V = np.log10(sigma)
-# R band:
-#σ_μ = 0.610; μ_s = 19.87; R_s = 0.490; σ_R = 0.241; V_s = 2.200
-#σ_V = 0.111; ρ_Rμ = 0.760; ρ_Vμ = 0.000; ρ_RV = 0.543
-
-# the FP is sampled from in the galaxy's rest frame. Slight deviation from Goldstein. => he means that the Q correction isnt required
-# Not 100% correct but close enough I think. A bit more conservative.
-
-#means = np.array([μ_s, R_s])+(V-V_s)/σ_V*np.array([σ_μ*ρ_Vμ, σ_R*ρ_RV]) 
-#cov = np.array([[σ_μ**2*(1-ρ_Vμ**2), σ_R*σ_V*(ρ_Rμ-ρ_RV*ρ_Vμ)], # why is it σ_R*σ_V here & not σ_R*σ_μ   - i think typo                          
-#                [σ_R*σ_V*(ρ_Rμ-ρ_RV*ρ_Vμ), σ_R**2*(1-ρ_RV**2)]])
-
-#I am gonna make a corrected version of the FP sampling
-
-
-def sample_FP(sigma, z, ell, apply_kcorr=False, model_mean=None, model_std=None, cosmo=cosmo, v_rand=None, size=None):
+def sample_FP(sigma, z, ell, apply_kcorr=False, model_mean=None, model_std=None, cosmo=cosmo, size=None):
     """
     Sample lens galaxy properties (Mr, re) from the r-band Fundamental Plane (FP)
 
@@ -91,11 +76,7 @@ def sample_FP(sigma, z, ell, apply_kcorr=False, model_mean=None, model_std=None,
         Whether to apply k-correction. Default = False.
     model_mean, model_std : sklearn models, optional
         Pretrained regressors required if apply_kcorr=True.
-    cosmo : astropy.cosmology
-        Cosmology object.
-    v_rand : ndarray, optional
-        Pre-generated random numbers of shape (N, 2).
-    size : int, optional
+    size : int
         Number of samples to generate.
 
     Returns
@@ -103,7 +84,7 @@ def sample_FP(sigma, z, ell, apply_kcorr=False, model_mean=None, model_std=None,
     Mr : ndarray
         Absolute r-band magnitude.
     re : ndarray
-        Effective radius (arcsec).
+        Effective radius (in arcsecs).
     k_corr : ndarray
         K-correction needed for app mag calculation.
     """
@@ -116,6 +97,7 @@ def sample_FP(sigma, z, ell, apply_kcorr=False, model_mean=None, model_std=None,
     if size is None:
         size = sigma.shape[0]
 
+    # FP parameters (r-band, rest-frame) (from Bernardi 2003)
     σ_μ = 0.610
     μ_s = 19.87
     R_s = 0.490
@@ -126,60 +108,45 @@ def sample_FP(sigma, z, ell, apply_kcorr=False, model_mean=None, model_std=None,
     ρ_Vμ = 0.000
     ρ_RV = 0.543
 
+    # Log velocity dispersion
     V = np.log10(sigma)
 
-    mu_mean = μ_s + (V - V_s) / σ_V * (σ_μ * ρ_Vμ)
-    re_mean = R_s + (V - V_s) / σ_V * (σ_R * ρ_RV)
-
-    means = np.column_stack([mu_mean, re_mean])
+    means = np.array([μ_s, R_s]) + (V - V_s) / σ_V * np.array([σ_μ * ρ_Vμ, σ_R * ρ_RV])
+    mu_real, re_real = means.T if means.ndim > 1 else means
 
     cov = np.array([
-        [σ_μ**2 * (1 - ρ_Vμ**2),
-         σ_R * σ_μ * (ρ_Rμ - ρ_RV * ρ_Vμ)],
-        [σ_R * σ_μ * (ρ_Rμ - ρ_RV * ρ_Vμ),
-         σ_R**2 * (1 - ρ_RV**2)]
+        [σ_μ**2 * (1 - ρ_Vμ**2), σ_R * σ_μ * (ρ_Rμ - ρ_RV * ρ_Vμ)],
+        [σ_R * σ_μ * (ρ_Rμ - ρ_RV * ρ_Vμ), σ_R**2 * (1 - ρ_RV**2)]
     ])
 
-    eig, w = np.linalg.eigh(cov)
+    eig, w = np.linalg.eig(cov)
+    v_uniform = np.random.rand(size, 2)  # uniforms for mu and logR
+    multivar_norm_given_cov = v_uniform @ np.diag(np.sqrt(eig)) @ w.T
+    mu = mu_real + multivar_norm_given_cov[:, 0]
+    re = re_real + multivar_norm_given_cov[:, 1]
 
-    if v_rand is None:
-        v_rand = np.random.randn(size, 2)
-
-    multivar = v_rand @ (w * np.sqrt(eig))
-
-    mu = means[:, 0] + multivar[:, 0]
-    log_re = means[:, 1] + multivar[:, 1]
-
-    Dl = cosmo.luminosity_distance(z).to_value(u.Mpc)
-    Da = cosmo.angular_diameter_distance(z).to_value(u.Mpc)
-
-    re_phys = (10**log_re) * (cosmo.h / 0.7)  # kpc
-
-    theta_rad = re_phys / Da  # radians 
-
-    arcsec_to_rad = (1 * u.arcsec).to_value(u.rad)
-    theta_arcsec = theta_rad / arcsec_to_rad
-
+    # Convert to observed magnitude
+    Dl = cosmo.luminosity_distance(z)  # luminosity distance
     m_obs = (
         mu
-        - 5 * np.log10(theta_arcsec)
+        - 5 * np.log10((10**re * (cosmo.h / 0.7) * u.kpc / Dl).to_value(1) / (1 * u.arcsec).to_value(u.rad))
         - 2.5 * np.log10(2 * np.pi)
     )
+    Mr = m_obs - 5 * np.log10((Dl / (10 * u.pc)).to_value(1))  # Absolute r-band magnitude
 
-    Dl_pc = cosmo.luminosity_distance(z).to_value(u.pc)
-
-    Mr = m_obs - 5 * np.log10(Dl_pc / 10.0)
-
+    # Optional k-correction (to be added later, I dont have the millenium simulation stuff worked out yet)
     if apply_kcorr:
         if model_mean is None or model_std is None:
             raise ValueError("Need model_mean and model_std for k-correction")
         kc_mean, kc_std = kcormeanstd(z, Mr, model_mean, model_std, size=size)
         u_kc = np.random.rand(size)
-        k_corr = scs.norm.ppf(u_kc, loc=kc_mean, scale=kc_std)
+        k_corr = scs_norm.ppf(u_kc, loc=kc_mean, scale=kc_std)
+        # Mr += k_corr
     else:
         k_corr = np.zeros(size)
 
-    re = theta_arcsec / np.sqrt(1 - ell) #circularized radius to major-axis radius
+    re = 10**re * (cosmo.h / 0.7) * (u.kpc / cosmo.angular_diameter_distance(z) * u.rad).to_value(u.arcsec)
+    re /= np.sqrt(1 - ell)  # To convert from circular to major axis effective radius (the FP is fitted as circularised radii)
 
     if is_scalar:
         return Mr[0], re[0], k_corr[0]

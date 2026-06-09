@@ -272,7 +272,7 @@ Unobservable lens
     snr_V1  = np.array(snr_V1)
 
     # Detection logic
-    detected_mask = snr_net >= snr_threshold
+    detected_mask = ((snr_net >= snr_threshold) &  (snr_H1>= 4) &  (snr_L1>=4) & (snr_V1>=4))
     detected_indices = np.where(detected_mask)[0]
     n_detected = len(detected_indices)
 

@@ -34,9 +34,9 @@ def sample_source_galaxy_pars(size=1, model='non_weighted'):
     """
 
     if model=='mstar_weighted':
-        trained_de = "source_galaxy/trained_de_weighted_mass_b32_h128_e1000_sizen.pkl"
+        trained_de = "../source_galaxy/trained_de_weighted_mass_b32_h128_e1000_sizen.pkl"
     elif model=='non_weighted':
-        trained_de = "source_galaxy/trained_de_b32_h128_e1000_bdef_wbounds.pkl"
+        trained_de = "../source_galaxy/trained_de_b32_h128_e1000_bdef_wbounds.pkl"
     else:
         raise ValueError('Invalid model name!')
 

@@ -6,6 +6,7 @@ from mml.populations import (
     sample_slope_gamma,
     sample_shear,
     sample_lens_position,
+    sample_FP,
 )
 
 
@@ -205,3 +206,112 @@ def test_shared_light_and_mass_ellipticity():
         theta_light,
         theta_mass,
     )
+
+def test_sample_FP_shapes():
+    rng = np.random.default_rng(1234)
+
+    sigma = np.full(20, 200.0)
+    z = np.full(20, 0.5)
+    ell = np.full(20, 0.2)
+
+    Mr, re, k_corr = sample_FP(
+        sigma=sigma,
+        z=z,
+        ell=ell,
+        rng=rng,
+    )
+
+    assert Mr.shape == (20,)
+    assert re.shape == (20,)
+    assert k_corr.shape == (20,)
+
+
+def test_sample_FP_finite():
+    rng = np.random.default_rng(1234)
+
+    sigma = np.full(20, 200.0)
+    z = np.full(20, 0.5)
+    ell = np.full(20, 0.2)
+
+    Mr, re, k_corr = sample_FP(
+        sigma=sigma,
+        z=z,
+        ell=ell,
+        rng=rng,
+    )
+
+    assert np.all(np.isfinite(Mr))
+    assert np.all(np.isfinite(re))
+    assert np.all(np.isfinite(k_corr))
+
+
+def test_sample_FP_positive_effective_radius():
+    rng = np.random.default_rng(1234)
+
+    sigma = np.full(100, 200.0)
+    z = np.full(100, 0.5)
+    ell = np.full(100, 0.2)
+
+    _, re, _ = sample_FP(
+        sigma=sigma,
+        z=z,
+        ell=ell,
+        rng=rng,
+    )
+
+    assert np.all(re > 0)
+
+
+def test_sample_FP_kcorr_zero_by_default():
+    rng = np.random.default_rng(1234)
+
+    sigma = np.full(20, 200.0)
+    z = np.full(20, 0.5)
+    ell = np.full(20, 0.2)
+
+    _, _, k_corr = sample_FP(
+        sigma=sigma,
+        z=z,
+        ell=ell,
+        rng=rng,
+    )
+
+    assert np.all(k_corr == 0)
+
+
+def test_sample_FP_scalar_input():
+    rng = np.random.default_rng(1234)
+
+    Mr, re, k_corr = sample_FP(
+        sigma=200.0,
+        z=0.5,
+        ell=0.2,
+        rng=rng,
+    )
+
+    assert np.isscalar(Mr)
+    assert np.isscalar(re)
+    assert np.isscalar(k_corr)
+
+
+def test_sample_FP_reproducible():
+    sigma = np.full(20, 200.0)
+    z = np.full(20, 0.5)
+    ell = np.full(20, 0.2)
+
+    result1 = sample_FP(
+        sigma=sigma,
+        z=z,
+        ell=ell,
+        rng=np.random.default_rng(1234),
+    )
+
+    result2 = sample_FP(
+        sigma=sigma,
+        z=z,
+        ell=ell,
+        rng=np.random.default_rng(1234),
+    )
+
+    for a, b in zip(result1, result2):
+        np.testing.assert_array_equal(a, b)

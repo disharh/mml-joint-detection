@@ -6,6 +6,7 @@ This module contains:
     - The redshift-dependent cumulative VDF
     - The redshift evolution of the VDF
     - The lens population probability distributions
+    - K-corrections (Work in progress)
 
 The population model follows the prescriptions used in:
     Bernardi et al. (2003)
@@ -15,8 +16,7 @@ The population model follows the prescriptions used in:
 The default cosmology is Planck18.
 """
 
-from pathlib import Path
-import os
+
 import numpy as np
 import scipy.stats as scs
 import numdifftools as nd
@@ -24,6 +24,7 @@ from astropy.cosmology import Planck18 as cosmo
 from astropy import units as u
 from astropy import constants as c
 from scipy.special import gamma
+from sklearn.preprocessing import PolynomialFeatures
 
 # ---------------------------------------------------------------------------
 # Local velocity dispersion function
@@ -278,3 +279,51 @@ def pi_l_weighted(sigma, z):
     return sigma**4 * pi_l(sigma, z)
 
 
+##Lens light profile
+
+# k-correction needed for apparent magnitude (from Wempe+ 2024)
+# still need to add a default model_mean and model_std -> comes from millenium gal simulations 
+
+#dir_tables = Path(__file__).parent.parent / 'tables'  - put apt paths
+
+#model_mean = load_pickle(str(dir_tables / "mean.sm"))
+#model_std = load_pickle(str(dir_tables / "std.sm"))
+
+def kcormeanstd(z, Mr_, model_mean, model_std, size=1):
+    """
+    Compute k-correction mean and std for a given z and Mr.
+
+    Parameters
+    ----------
+    z : float or ndarray
+        Redshift of lens galaxy.
+    Mr_ : float or ndarray
+        Absolute magnitude in r-band.
+    model_mean : sklearn-like regressor
+        Pretrained polynomial regression model for mean k-correction.
+    model_std : sklearn-like regressor
+        Pretrained polynomial regression model for std k-correction.
+    size : int
+        Number of samples to generate.
+
+    Returns
+    -------
+    mean : float or ndarray
+        Predicted mean k-correction.
+    std : float or ndarray
+        Predicted std of k-correction.
+    """
+    z = np.full(size, z) if np.isscalar(z) else np.asarray(z)
+    Mr_ = np.full(size, Mr_) if np.isscalar(Mr_) else np.asarray(Mr_)
+
+    polynomial_features = PolynomialFeatures(degree=4)
+    Mr = np.clip(Mr_, -25, -15)  # restrict magnitude range
+
+    x = np.vstack([np.log(1 + z), Mr]).T
+    xp = polynomial_features.fit_transform(x)
+
+    pred_mean = model_mean.predict(xp)
+    pred_mean[x[:, 0] < 0.1] = 0
+    pred_std = model_std.predict(xp)
+
+    return pred_mean, np.abs(pred_std)

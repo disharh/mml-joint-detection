@@ -18,6 +18,7 @@ from .lens_sampling import (
     sample_slope_gamma,
     sample_shear,
     sample_lens_position,
+    sample_FP,
 )
 
 __all__ = [

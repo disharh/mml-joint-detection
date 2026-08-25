@@ -17,6 +17,7 @@ import numpy as np
 import scipy.stats as scs
 from numpy.polynomial import chebyshev as cheb
 from astropy.cosmology import Planck18 as cosmo
+from astropy import units as u
 from ler.lens_galaxy_population import LensGalaxyParameterDistribution
 
 from mml.utils import (
@@ -25,7 +26,8 @@ from mml.utils import (
     x2u,
 )
 
-from .lens import pi_l, pi_l_weighted
+from .lens import pi_l, pi_l_weighted, kcormeanstd
+from mml.populations import conditional_sigma_z
 
 
 # ---------------------------------------------------------------------------
@@ -393,3 +395,105 @@ def sample_lens_position(
     ) * lenspos_width
 
     return dx, dy
+
+
+# Fundamental plane (from Wempe+ 2024)
+
+def sample_FP(sigma, z, ell, apply_kcorr=False, model_mean=None, model_std=None, cosmo=cosmo, rng=None):
+    """
+    Sample lens galaxy properties (Mr, re) from the r-band Fundamental Plane (FP)
+
+    Parameters
+    ----------
+    sigma : float or ndarray
+        Velocity dispersion [km/s].
+    z : float or ndarray
+        Redshift of the lens galaxy.
+    ell : float or ndarray
+        Light Ellipticity
+    apply_kcorr : bool, optional
+        Whether to apply k-correction. Default = False.
+    model_mean, model_std : sklearn models, optional
+        Pretrained regressors required if apply_kcorr=True.
+
+    Returns
+    -------
+    Mr : ndarray
+        Absolute r-band magnitude.
+    re : ndarray
+        Effective radius (in arcsecs).
+    k_corr : ndarray
+        K-correction needed for app mag calculation.
+    """
+    if rng is None:
+        rng = np.random.default_rng()
+
+    is_scalar = np.isscalar(sigma) and np.isscalar(z) and np.isscalar(ell)
+
+    sigma = np.atleast_1d(sigma)
+    z = np.atleast_1d(z)
+    ell = np.atleast_1d(ell)
+
+    size = sigma.shape[0]
+
+    # FP parameters (r-band, rest-frame) (from Bernardi 2003)
+    σ_μ = 0.610
+    μ_s = 19.87
+    R_s = 0.490
+    σ_R = 0.241
+    V_s = 2.200
+    σ_V = 0.111
+    ρ_Rμ = 0.760
+    ρ_Vμ = 0.000
+    ρ_RV = 0.543
+
+    # Log velocity dispersion
+    V = np.log10(sigma)
+
+    mean = np.array([μ_s, R_s])
+    slope = np.array([σ_μ * ρ_Vμ, σ_R * ρ_RV])
+
+    means = mean + ((V - V_s) / σ_V)[:, None] * slope
+
+    mu_real = means[:, 0]
+    re_real = means[:, 1]
+
+    cov = np.array([
+        [σ_μ**2 * (1 - ρ_Vμ**2), σ_R * σ_μ * (ρ_Rμ - ρ_RV * ρ_Vμ)],
+        [σ_R * σ_μ * (ρ_Rμ - ρ_RV * ρ_Vμ), σ_R**2 * (1 - ρ_RV**2)]
+    ])
+
+    eig, w = np.linalg.eig(cov)
+    v_uniform = rng.random((size, 2))  # uniforms for mu and logR
+    multivar_norm_given_cov = v_uniform @ np.diag(np.sqrt(eig)) @ w.T
+    mu = mu_real + multivar_norm_given_cov[:, 0]
+    re = re_real + multivar_norm_given_cov[:, 1]
+
+    # Convert to observed magnitude
+    Dl = cosmo.luminosity_distance(z)  # luminosity distance
+    m_obs = (
+        mu
+        - 5 * np.log10((10**re * (cosmo.h / 0.7) * u.kpc / Dl).to_value(1) / (1 * u.arcsec).to_value(u.rad))
+        - 2.5 * np.log10(2 * np.pi)
+    )
+    Mr = m_obs - 5 * np.log10((Dl / (10 * u.pc)).to_value(1))  # Absolute r-band magnitude
+
+    # Optional k-correction (to be added later, I dont have the millenium simulation stuff worked out yet)
+    if apply_kcorr:
+        if model_mean is None or model_std is None:
+            raise ValueError("Need model_mean and model_std for k-correction")
+        kc_mean, kc_std = kcormeanstd(z, Mr, model_mean, model_std, size=size)
+        u_kc = rng.random(size)
+        k_corr = scs.norm.ppf(u_kc, loc=kc_mean, scale=kc_std)
+        # Mr += k_corr
+    else:
+        k_corr = np.zeros(size)
+
+    re = 10**re * (cosmo.h / 0.7) * (u.kpc / cosmo.angular_diameter_distance(z) * u.rad).to_value(u.arcsec)
+    re /= np.sqrt(1 - ell)  # To convert from circular to major axis effective radius (the FP is fitted as circularised radii)
+
+    if is_scalar:
+        return Mr[0], re[0], k_corr[0]
+    return Mr, re, k_corr
+
+

@@ -21,6 +21,9 @@ from .lens_sampling import (
     sample_FP,
 )
 
+from .lens_populations import Lens, LensParams
+from .source_populations import Source, SourceParams
+
 __all__ = [
     "phi_loc",
     "cvdf_fit",
@@ -34,4 +37,10 @@ __all__ = [
     "sample_slope_gamma",
     "sample_shear",
     "sample_lens_position",
+    "Lens",
+    "LensParams",
+    "Source",
+    "SourceParams",
 ]
+
+

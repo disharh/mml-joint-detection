@@ -23,6 +23,7 @@ from .lens_sampling import (
 
 from .lens_populations import Lens, LensParams
 from .source_populations import Source, SourceParams
+from .gw_populations import GWPopulation, GWParams
 
 __all__ = [
     "phi_loc",
@@ -41,6 +42,8 @@ __all__ = [
     "LensParams",
     "Source",
     "SourceParams",
+   "GWPopulation",
+    "GWParams",
 ]
 
 

@@ -1,19 +1,26 @@
 """
-High-level gravitational-wave source population sampling.
+High-level gravitational-wave source population sampling and lensing.
 
 This module provides:
 
     GWParams
-        Dataclass containing sampled GW parameters.
+        Intrinsic and extrinsic parameters of a sampled BBH.
+
+    LensedGWParams
+        Effective GW parameters for the images of a lensed BBH.
 
     GWPopulation
-        High-level BBH population sampler using LeR, together with
-        utilities for applying lensing effects to GW parameters.
+        BBH population sampler and gravitational-wave lensing utilities.
 """
 
 from dataclasses import dataclass
-import numpy as np
 
+import numpy as np
+from astropy.cosmology import Planck18 as cosmo
+from lenstronomy.LensModel.lens_model import LensModel
+from lenstronomy.LensModel.Solver.lens_equation_solver import (
+    LensEquationSolver,
+)
 from ler.gw_source_population import CBCSourceParameterDistribution
 
 
@@ -23,12 +30,7 @@ from ler.gw_source_population import CBCSourceParameterDistribution
 
 @dataclass
 class GWParams:
-    """
-    Parameters describing a sampled BBH gravitational-wave source.
-
-    Parameters may be either scalars (for a single event) or numpy
-    arrays (for multiple sampled events).
-    """
+    """Parameters describing a sampled BBH gravitational-wave source."""
 
     mass_1_source: float | np.ndarray
     mass_2_source: float | np.ndarray
@@ -52,8 +54,6 @@ class GWParams:
     geocent_time: float | np.ndarray
     phase: float | np.ndarray
 
-    # These are needed when computing the effective parameters.
-    # They are not sampled by sample(), but can be attached later.
     luminosity_distance: float | np.ndarray | None = None
 
     def to_dict(self):
@@ -66,12 +66,35 @@ class GWParams:
 
 
 # ---------------------------------------------------------------------------
+# Lensed GW parameters
+# ---------------------------------------------------------------------------
+
+@dataclass
+class LensedGWParams:
+    """Effective GW parameters for the images of a lensed BBH."""
+
+    effective_luminosity_distance: np.ndarray
+    effective_geocent_time: np.ndarray
+    effective_phase: np.ndarray
+    effective_ra: np.ndarray
+    effective_dec: np.ndarray
+
+    magnifications: np.ndarray
+    time_delays: np.ndarray
+
+    x_image: np.ndarray
+    y_image: np.ndarray
+
+    n_images: int
+
+
+# ---------------------------------------------------------------------------
 # GW population
 # ---------------------------------------------------------------------------
 
 class GWPopulation:
     """
-    High-level BBH gravitational-wave population sampler.
+    High-level BBH population sampler and GW lensing utility.
 
     Parameters
     ----------
@@ -86,12 +109,6 @@ class GWPopulation:
 
     rng : numpy.random.Generator, optional
         Random-number generator.
-
-        Note
-        ----
-        The current LeR sampling interface used here does not expose
-        a NumPy Generator argument, so this is stored for future
-        reproducibility support but is not currently passed to LeR.
     """
 
     SELECTED_KEYS = [
@@ -118,15 +135,10 @@ class GWPopulation:
         spin_precession=True,
         rng=None,
     ):
-
         self.event_type = event_type
         self.spin_zero = spin_zero
         self.spin_precession = spin_precession
-
-        if rng is None:
-            rng = np.random.default_rng()
-
-        self.rng = rng
+        self.rng = np.random.default_rng() if rng is None else rng
 
         self.cbc = CBCSourceParameterDistribution(
             event_type=event_type,
@@ -171,21 +183,13 @@ class GWPopulation:
             }
         )
 
+    # ------------------------------------------------------------------
+    # GW lensing
+    # ------------------------------------------------------------------
+
     @staticmethod
-    def compute_morse_phase(hessian):
-        """
-        Compute the Morse phase for each lensed image.
-
-        Parameters
-        ----------
-        hessian : array-like
-            Hessian components ``(f_xx, f_xy, f_yx, f_yy)``.
-
-        Returns
-        -------
-        ndarray
-            Morse phase for each image.
-        """
+    def _morse_phase(hessian):
+        """Compute the Morse phase for each lensed image."""
 
         f_xx, f_xy, f_yx, f_yy = hessian
 
@@ -194,105 +198,149 @@ class GWPopulation:
         A_yx = -f_yx
         A_yy = 1 - f_yy
 
-        detA = A_xx * A_yy - A_xy * A_yx
-        traceA = A_xx + A_yy
+        det_A = A_xx * A_yy - A_xy * A_yx
+        trace_A = A_xx + A_yy
 
-        morse = np.zeros_like(detA)
+        morse = np.zeros_like(det_A)
 
-        morse[(detA < 0)] = np.pi / 2.0
-        morse[(detA > 0) & (traceA < 0)] = np.pi
-        morse[(detA > 0) & (traceA > 0)] = 0.0
+        morse[det_A < 0] = np.pi / 2
+        morse[(det_A > 0) & (trace_A < 0)] = np.pi
 
         return morse
 
-    @staticmethod
-    def compute_effective_params(
-        gw_params,
-        magnifications,
-        delays,
-        hessian,
-        x_image,
-        y_image,
+    def lens(
+        self,
+        gw,
+        lens,
         x_gw,
         y_gw,
+        z_source,
     ):
         """
-        Compute effective GW parameters for each lensed image.
+        Lens a GW source using a sampled lens galaxy.
 
         Parameters
         ----------
-        gw_params : GWParams or dict
-            Intrinsic/extrinsic GW parameters. Must contain
-            ``luminosity_distance``, ``geocent_time``, ``phase``,
-            ``ra`` and ``dec``.
+        gw : GWParams
+            Sampled GW parameters.
 
-        magnifications : array-like
-            Lensing magnifications.
-
-        delays : array-like
-            Time delays in seconds.
-
-        hessian : array-like
-            Lens-model Hessian components.
-
-        x_image, y_image : array-like
-            Image positions in arcseconds.
+        lens : LensParams
+            Sampled lens parameters.
 
         x_gw, y_gw : float
             GW source position in arcseconds.
 
+        z_source : float
+            Source redshift.
+
         Returns
         -------
-        GWParams or dict
-            GW parameters with effective parameters added.
+        LensedGWParams
+            Effective GW parameters for all lensed images.
         """
 
-        if isinstance(gw_params, GWParams):
-            params = gw_params.to_dict()
-            return_dataclass = True
-        else:
-            params = gw_params.copy()
-            return_dataclass = False
+        if gw.luminosity_distance is None:
+            print("Assuming z_source = z_gw to calculate GW luminosity distance..")
+            gw.luminosity_distance = cosmo.luminosity_distance([z_source]).value
 
-        morse_phase = GWPopulation.compute_morse_phase(hessian)
+        kwargs_lens = lens.to_lenstronomy()
 
-        dL = params["luminosity_distance"]
-        t0 = params["geocent_time"]
-        phi = params["phase"]
-        ra = params["ra"]
-        dec = params["dec"]
+        lens_model = LensModel(
+            lens_model_list=["EPL_NUMBA", "SHEAR"],
+            cosmo=cosmo,
+        )
 
-        mu = np.abs(magnifications)
-        dt = delays
+        solver = LensEquationSolver(lens_model)
+
+        x_image, y_image = solver.image_position_from_source(
+            x_gw,
+            y_gw,
+            kwargs_lens,
+            solver="analytical",
+        )
+
+        n_images = len(x_image)
+
+        if n_images == 0:
+            raise RuntimeError(
+                "Lens equation solver produced no images."
+            )
+
+        if n_images > 5:
+            raise RuntimeError(
+                f"Lens equation solver produced {n_images} images."
+            )
+
+        magnifications = lens_model.magnification(
+            x=x_image,
+            y=y_image,
+            kwargs=kwargs_lens,
+        )
+
+        lens_model_cosmo = LensModel(
+            lens_model_list=["EPL_NUMBA", "SHEAR"],
+            cosmo=cosmo,
+            z_lens=lens.z_lens,
+            z_source=z_source,
+        )
+
+        delays = lens_model_cosmo.arrival_time(
+            x_image=x_image,
+            y_image=y_image,
+            kwargs_lens=kwargs_lens,
+        )
+
+        delays = (delays - delays.min()) * 86400.0
+
+        hessian = lens_model.hessian(
+            x_image,
+            y_image,
+            kwargs_lens,
+        )
+
+        morse_phase = self._morse_phase(hessian)
 
         arcsec_to_rad = 1.0 / 206265.0
 
-        dx = (np.asarray(x_image) - x_gw) * arcsec_to_rad
-        dy = (np.asarray(y_image) - y_gw) * arcsec_to_rad
+        dx = (
+            np.asarray(x_image) - x_gw
+        ) * arcsec_to_rad
 
-        cosdec = np.cos(dec)
+        dy = (
+            np.asarray(y_image) - y_gw
+        ) * arcsec_to_rad
 
-        params["effective_luminosity_distance"] = (
-            dL / np.sqrt(mu)
+        mu = np.abs(magnifications)
+
+        effective_luminosity_distance = (
+            gw.luminosity_distance / np.sqrt(mu)
         ).reshape(-1)
 
-        params["effective_geocent_time"] = (
-            t0 + dt
+        effective_geocent_time = (
+            gw.geocent_time + delays
         ).reshape(-1)
 
-        params["effective_phase"] = (
-            phi - morse_phase
+        effective_phase = (
+            gw.phase - morse_phase
         ).reshape(-1)
 
-        params["effective_ra"] = (
-            ra + dx / cosdec
+        effective_ra = (
+            gw.ra + dx / np.cos(gw.dec)
         ).reshape(-1)
 
-        params["effective_dec"] = (
-            dec + dy
+        effective_dec = (
+            gw.dec + dy
         ).reshape(-1)
 
-        if return_dataclass:
-            return params
-
-        return params
+        return LensedGWParams(
+            effective_luminosity_distance=effective_luminosity_distance,
+            effective_geocent_time=effective_geocent_time,
+            effective_phase=effective_phase,
+            effective_ra=effective_ra,
+            effective_dec=effective_dec,
+            magnifications=np.asarray(magnifications),
+            time_delays=np.asarray(delays),
+            x_image=np.asarray(x_image),
+            y_image=np.asarray(y_image),
+            n_images=n_images,
+        )

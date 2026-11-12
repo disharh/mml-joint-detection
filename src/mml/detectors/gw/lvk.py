@@ -48,6 +48,7 @@ class LVKDetector:
         min_detectors=2,
         duty_cycles=None,
         random_seed=None,
+        exact_num_images=False,
     ):
         """
         Parameters
@@ -77,12 +78,18 @@ class LVKDetector:
 
         random_seed : int or None
             Seed for reproducible duty-cycle sampling.
+
+        exact_num_images : bool
+            If False (default) the event is detected when *at least*
+            ``num_detected_images`` images are detectable. If True it is
+            detected only when *exactly* that many are.
         """
 
         self.snr_threshold = snr_threshold
         self.detector_snr_threshold = detector_snr_threshold
         self.num_detected_images = num_detected_images
         self.min_detectors = min_detectors
+        self.exact_num_images = exact_num_images
 
         self.detectors = ("H1", "L1", "V1")
 
@@ -293,10 +300,14 @@ class LVKDetector:
         # Keep ALL detectable images.
         detected_indices = np.where(detected_mask)[0]
 
-        # The event is detected if at least the requested number
-        # of images are detectable.
+        # The event is detected if at least (or, with
+        # ``exact_num_images``, exactly) the requested number of images
+        # are detectable.
         n_detected = len(detected_indices)
-        detected = n_detected >= self.num_detected_images
+        if self.exact_num_images:
+            detected = n_detected == self.num_detected_images
+        else:
+            detected = n_detected >= self.num_detected_images
 
         # --------------------------------------------------
         # 6. Return results for every image

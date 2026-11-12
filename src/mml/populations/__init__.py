@@ -23,7 +23,7 @@ from .lens_sampling import (
 
 from .lens_populations import Lens, LensParams
 from .source_populations import Source, SourceParams
-from .gw_populations import GWPopulation, GWParams
+from .gw_populations import GWPopulation, GWParams, LensImageSolution
 from .positions import BBHPositionSampler, BBHPositionSample
 
 __all__ = [
@@ -45,8 +45,7 @@ __all__ = [
     "SourceParams",
    "GWPopulation",
     "GWParams",
+    "LensImageSolution",
     "BBHPositionSampler",
     "BBHPositionSample",
 ]
-
-

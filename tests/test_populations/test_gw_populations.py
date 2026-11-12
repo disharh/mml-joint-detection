@@ -420,3 +420,41 @@ def test_lens_rejects_more_than_five_images(monkeypatch):
             y_gw=0.0,
             z_source=1.0,
         )
+
+# ============================================================
+# Solve-once / apply-many
+# ============================================================
+
+def test_solve_once_apply_many_matches_lens():
+    """lens() == solve_images() + apply_lensing(); solution is reusable."""
+    import numpy as np
+    from mml.populations import GWPopulation, GWParams, LensParams
+
+    lens = LensParams(
+        sigma_lens=220.0, z_lens=0.5, q_lens=0.8, ell_mass_lens=0.2,
+        theta_mass_lens=0.0, ell_light_lens=0.2, theta_light_lens=0.0,
+        mag_lens=20.0, re_lens=1.0, x_lens=0.0, y_lens=0.0,
+        e1_lens=0.1, e2_lens=0.0, gamma=1.9, gamma1=0.02, gamma2=0.01,
+        theta_ein=0.8,
+    )
+    pop = GWPopulation.__new__(GWPopulation)  # no LeR initialisation needed
+
+    def gw(t0):
+        return GWParams(
+            mass_1_source=30.0, mass_2_source=20.0, a_1=0.1, a_2=0.1,
+            tilt_1=0.1, tilt_2=0.1, phi_12=0.1, phi_jl=0.1, theta_jn=0.5,
+            ra=1.0, dec=0.3, psi=0.2, geocent_time=t0, phase=0.4,
+            luminosity_distance=1000.0,
+        )
+
+    solution = pop.solve_images(lens, 0.05, 0.02, 1.5)
+    for t0 in (0.0, 5.0e8):
+        a = pop.apply_lensing(gw(t0), solution, 0.05, 0.02, 1.5)
+        b = pop.lens(gw(t0), lens, 0.05, 0.02, 1.5)
+        np.testing.assert_allclose(
+            a.effective_geocent_time, b.effective_geocent_time
+        )
+        np.testing.assert_allclose(
+            a.effective_luminosity_distance, b.effective_luminosity_distance
+        )
+        assert a.n_images == b.n_images == solution.n_images

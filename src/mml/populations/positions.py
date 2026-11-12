@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from mml.lensing.caustics import get_caustics
+from mml.lensing.caustics import get_caustics, region_min_images
 from mml.lensing.polygon import sample_polygon_single
 from mml.lensing.sersic import sample_sersic_cart
 
@@ -16,6 +16,11 @@ class BBHPositionSample:
     caustic_area: float
     x_source: float
     y_source: float
+    # Minimum number of lensed images guaranteed by the region the BBH was
+    # drawn from (2 = double, 3 = triple, 4 = quad). ``caustic_area`` is the
+    # area of *that* region. Not part of ``to_dict`` (kept for backwards
+    # compatibility); the simulation driver stores it explicitly.
+    min_lensed_images: int | None = None
 
     def to_dict(self):
         return {
@@ -53,14 +58,32 @@ class BBHPositionSampler:
         self,
         kwargs_lens,
         kwargs_source,
-        num_detected_gws,
+        min_lensed_images=None,
+        *,
+        num_detected_gws=None,
     ):
         """
         Sample one BBH and source-galaxy position.
+
+        Parameters
+        ----------
+        min_lensed_images : int or str
+            Source-plane region to draw the BBH from: 2/"double", 3/"triple"
+            or 4/"quad". The BBH then produces *at least* this many lensed
+            images. This is a lensing-geometry choice and says nothing about
+            how many of those images are detectable.
+        num_detected_gws : int, optional
+            Deprecated alias of ``min_lensed_images``.
         """
+        if min_lensed_images is None:
+            min_lensed_images = num_detected_gws
+        if min_lensed_images is None:
+            raise TypeError("min_lensed_images must be given.")
+        min_lensed_images = region_min_images(min_lensed_images)
+
         poly_to_sample = get_caustics(
             kwargs_lens,
-            num_detected_gws,
+            min_lensed_images,
         )
 
         u_gw = self.rng.uniform(0.0, 1.0, size=2)
@@ -87,6 +110,7 @@ class BBHPositionSampler:
             caustic_area=float(area),
             x_source=float(x_source),
             y_source=float(y_source),
+            min_lensed_images=min_lensed_images,
         )
 
     def sample_population(

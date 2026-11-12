@@ -1,37 +1,59 @@
 """
-sim_lenses_4im_mml.py
-======================
+simulate_lens_systems.py
+========================
 
-Simulate detection of quadruply-imaged (quad) strongly-lensed BBH mergers
-that are *jointly* detectable by:
+Simulate strongly lensed BBH mergers that are *jointly* detectable by
 
-    * LVK (H1+L1+V1; all three detectors online; 4 lensed images required), and
-    * Euclid VIS  (electromagnetic host-galaxy light).
+    * LVK (H1+L1+V1, with optional duty cycles), and
+    * Euclid VIS (electromagnetic host-galaxy light).
 
-This is the `mml` package equivalent of the old flat-script
-``scripts/sim_lenses_4gw.py``. Where the original script imported loose
-functions from ``scripts/*.py`` (``lens_mass.py``, ``lens_light.py``,
-``bbh_pos.py``, ``gw_pop.py``, ``likelihood.py``, ...) and relied on
-module-level globals, this version is built entirely on the
-``src/mml`` package:
+Two independent choices control which systems end up in the catalog:
 
-    mml.populations.Lens                 -- lens-galaxy sampler
-    mml.populations.Source               -- source-galaxy sampler (MAF/denmarf)
-    mml.populations.GWPopulation         -- BBH sampler + GW lensing
-    mml.populations.BBHPositionSampler   -- BBH/source position sampler
-    mml.lensing.einstein_radius          -- SIS Einstein radius
-    mml.detectors.em.euclid.calculate_snr -- Euclid EM detectability
-    mml.detectors.gw.lvk.LVKDetector     -- LVK network SNR + detection
+``--sampling-region {auto,double,triple,quad}``   (lensing GEOMETRY)
+    The source-plane region the BBH is drawn from. The regions are nested
+    "at least k images" regions: quad (>=4) ⊂ triple (>=3) ⊂ double (>=2).
+    A BBH drawn from region(k) produces *at least* k lensed images; it may
+    produce more (a double-region draw lands in the quad region with
+    probability A_quad / A_double). The area of this region is the lensing
+    cross-section stored as ``caustic_area`` / ``log_p_cross_sec``.
+
+``--min-detected-images K``   (DETECTABILITY; alias ``--num-gw``)
+    The system is kept only if at least K of its lensed images pass the LVK
+    detection criteria (``--exact-detected`` makes it exactly K).
+
+With ``--sampling-region auto`` (default) the region is chosen from K
+(K=2 -> double, K=3 -> triple, K>=4 -> quad). Because you cannot detect more
+images than exist, region(K) contains *every* system with >=K detectable
+images, so the catalog is complete and the cross-section is A_region. An
+explicit region larger than K's region is still complete (just less
+efficient); a region *smaller* than K's (e.g. quad lenses with K=2) yields a
+sub-population (``sample_is_complete: false`` in the YAML).
 
 Usage
 -----
-    python sim_lenses_4im_mml.py <job_id> [--n-systems N] [--out-dir DIR]
+    python simulate_lens_systems.py <job_id> --min-detected-images 2
+    python simulate_lens_systems.py <job_id> --min-detected-images 2 \
+        --sampling-region quad                 # quads with >=2 detectable
+    python simulate_lens_systems.py <job_id> --min-detected-images 3 --exact-detected
+    python simulate_lens_systems.py <job_id> --min-detected-images 2 \
+        --duty-cycles 0.7 0.7 0.75 --min-detectors 2
 
-Each detected system is written as a YAML file under
-``<out-dir>/quad_im/job_<job_id>/System_<n>_job<job_id>.yaml``, mirroring
-the directory convention of the original ``sim_lenses_4gw.py``
-(``lens_catalog/two_im/...``) but under a ``quad_im`` subdirectory since
-this script requires 4 detected lensed images rather than 2.
+``--exact-detected``: by default K means "at least K detectable images". With
+this flag the system is kept only if *exactly* K images are detectable (e.g.
+K=2 rejects systems where a third image is also detectable). The sampling
+region and cross-section are unchanged; only the acceptance test differs. If
+you want several multiplicities, it is usually better to run once with
+``--min-detected-images 2`` (no flag) and bin on ``n_images_detected`` in the
+YAML afterwards.
+
+Duty cycles: ``--duty-cycles H1 L1 V1`` accepts three probabilities (0-1)
+in the fixed detector order H1, L1, V1. They are drawn independently for
+every image and detector. Default: ``1.0 1.0 1.0`` (always online). Note that
+``--min-detectors`` counts only *operating* detectors, so with duty cycles
+below 1 the default of 3 requires all three to be online for every image;
+``--min-detectors 2`` is usually what you want.
+
+Output: ``<out-dir>/job_<job_id>/System_<n>_job<job_id>.yaml``.
 """
 
 from __future__ import annotations
@@ -51,6 +73,8 @@ from mml.populations import (
     BBHPositionSampler,
 )
 from mml.lensing import einstein_radius
+from mml.lensing.caustics import region_name
+from mml.simulation.sampling import resolve_sampling
 from mml.detectors.em.euclid import calculate_snr as calculate_euclid_snr, EUCLID
 from mml.detectors.gw.lvk import LVKDetector
 from mml.io.yaml import convert_dict
@@ -84,76 +108,114 @@ def log_cross_section(area: float) -> float:
     )
 
 
+
 # ---------------------------------------------------------------------------
 # Main simulation
 # ---------------------------------------------------------------------------
 
 def run(
     job_id: int,
-    num_gw: int = 4,
+    min_detected_images: int = 2,
+    sampling_region="auto",
+    exact_detected: bool = False,
     n_systems: int = 100,
-    out_dir: str = "lens_catalog/quad_im",
+    out_dir: str | None = None,
     max_system_attempts: int = 100_000,
     max_lens_attempts: int = 1_000,
     max_gw_attempts: int = 2_000,
     theta_ein_min: float | None = None,
+    min_detectors: int = 3,
+    duty_cycles: list[float] | None = None,
+    min_abs_magnification: float = 0.1,
     seed_offset: int = 5678,
 ):
     """
-    Simulate ``n_systems`` jointly EM+GW detected quad-image lens systems.
+    Simulate ``n_systems`` jointly EM+GW detected lensed-BBH systems.
 
     Parameters
     ----------
     job_id : int
-        Job/task index. Used to seed the RNG and to namespace output
-        files, matching the original per-job cluster-array convention.
+        Job/task index. Seeds the RNG and namespaces the output files.
 
-    num_gw : int
-        Required number of detected lensed images (4 for a quad system).
+    min_detected_images : int
+        Number of lensed images that must be LVK-detectable (>= 2).
+        This is a *detection* requirement, not a lensing-geometry one.
 
-    n_systems : int
-        Number of detected systems to generate before stopping.
+    sampling_region : {"auto", "double", "triple", "quad"}
+        Source-plane region the BBH is drawn from (lensing geometry).
+        See the module docstring. "auto" -> smallest region that is
+        complete for ``min_detected_images``.
 
-    out_dir : str
-        Base output directory. Files are written under
-        ``<out_dir>/job_<job_id>/``.
+    exact_detected : bool
+        Require exactly ``min_detected_images`` detectable images instead of
+        at least that many.
 
-    max_system_attempts, max_lens_attempts, max_gw_attempts : int
-        Retry budgets for the outer system loop, the lens-sampling loop,
-        and the GW-sampling/detection loop respectively.
+    out_dir : str, optional
+        Base output directory. Defaults to a name encoding the region and
+        the detection requirement, so different settings never mix.
 
-    theta_ein_min : float, optional
-        Minimum Einstein radius [arcsec] required for a lens to be
-        considered resolvable. Defaults to ``EUCLID.theta_ein_threshold``
-        so the EM and lens-sampling cuts stay consistent.
+    duty_cycles : list of float, optional
+        Three duty-cycle probabilities in H1, L1, V1 order. Each must lie
+        between 0 and 1. Defaults to [1.0, 1.0, 1.0].
 
-    seed_offset : int
-        Added to ``job_id`` to build the RNG seed, matching the original
-        script's ``np.random.seed(5678 + job_id)`` convention.
+    min_abs_magnification : float
+        |mu| threshold used only to count "bright" images for the catalog
+        (matches the |mu| = 0.1 cut baked into the double region).
+
+    Other parameters are retry budgets, detector settings and the seed offset.
     """
 
     if theta_ein_min is None:
         theta_ein_min = EUCLID.theta_ein_threshold
 
+    region_min, complete = resolve_sampling(
+        min_detected_images, sampling_region
+    )
+    region_label = region_name(region_min)
+
+    if out_dir is None:
+        out_dir = os.path.join(
+            "lens_catalog",
+            f"{region_label}_region_"
+            f"{'eq' if exact_detected else 'ge'}{min_detected_images}det",
+        )
+
+    print(
+        f"Sampling BBH positions in the '{region_label}' region "
+        f"(>= {region_min} images); requiring "
+        f"{'exactly' if exact_detected else 'at least'} "
+        f"{min_detected_images} detectable images. "
+        f"Complete sample: {complete}."
+    )
+
     rng = np.random.default_rng(seed_offset + job_id)
 
-    # High-level samplers / detectors, all sharing one RNG where possible.
     lens_sampler = Lens(sigmazfn="cond_on_zs", rng=rng)
     source_sampler = Source(rng=rng)
     position_sampler = BBHPositionSampler(rng=rng)
     gw_population = GWPopulation(rng=rng)
 
-    # Three-detector LVK network (H1, L1, V1), with every detector
-    # online for every image. With duty cycles fixed to 1, the effective
-    # network SNR is the quadrature sum of all three detector SNRs.
+    # Duty cycles are supplied as a three-element list in H1, L1, V1
+    # order. LVKDetector currently accepts a detector-name mapping, so
+    # convert the public list interface to that internal representation.
+    if duty_cycles is None:
+        duty_cycles = [1.0, 1.0, 1.0]
+
+    if len(duty_cycles) != 3:
+        raise ValueError(
+            "duty_cycles must contain exactly three values in H1, L1, V1 order."
+        )
+
+    duty_cycle_map = dict(zip(("H1", "L1", "V1"), duty_cycles))
+
+    # The detector's RNG is seeded from the simulation RNG so that
+    # duty-cycle draws are reproducible with job_id.
     lvk_detector = LVKDetector(
-        num_detected_images=num_gw,
-        min_detectors=3,
-        duty_cycles={
-            "H1": 1.0,
-            "L1": 1.0,
-            "V1": 1.0,
-        },
+        num_detected_images=min_detected_images,
+        exact_num_images=exact_detected,
+        min_detectors=min_detectors,
+        duty_cycles=duty_cycle_map,
+        random_seed=int(rng.integers(2**31 - 1)),
     )
 
     n_det = 0
@@ -208,16 +270,38 @@ def run(
         kwargs_source = source.to_lenstronomy()
 
         # ------------------------------------------------------------
-        # BBH + SOURCE-GALAXY POSITION SAMPLING (within the quad caustic)
+        # BBH + HOST POSITION: uniform inside the chosen region
+        # (lensing geometry: >= region_min images are produced)
         # ------------------------------------------------------------
         try:
             position = position_sampler.sample(
                 kwargs_lens=kwargs_lens,
                 kwargs_source=kwargs_source,
-                num_detected_gws=num_gw,
+                min_lensed_images=region_min,
             )
-        except Exception as e:
+        except (AssertionError, ValueError, RuntimeError) as e:
             print(f"Error while sampling BBH/source positions: {e}")
+            continue
+
+        # ------------------------------------------------------------
+        # SOLVE THE LENS EQUATION ONCE. Images, magnifications, delays and
+        # Morse phases do not depend on the BBH parameters, so the (up to
+        # 2000) GW draws below re-use this solution.
+        # ------------------------------------------------------------
+        try:
+            solution = gw_population.solve_images(
+                lens=lens,
+                x_gw=position.x_gw,
+                y_gw=position.y_gw,
+                z_source=source.z_source,
+            )
+        except RuntimeError as e:
+            print(f"Lens equation solver failed: {e}")
+            continue
+
+        # Cannot detect more images than exist: skip hopeless geometries
+        # instead of burning max_gw_attempts on them.
+        if solution.n_images < min_detected_images:
             continue
 
         # ------------------------------------------------------------
@@ -225,22 +309,17 @@ def run(
         # ------------------------------------------------------------
         em_start = time.perf_counter()
 
-        euclid_result = calculate_euclid_snr(
-            lens,
-            source,
-            position,
-        )
-
-        em_detected = euclid_result.observable
+        euclid_result = calculate_euclid_snr(lens, source, position)
 
         timings["em_detection_time"] = time.perf_counter() - em_start
         timings["em_attempts"] = 1
 
-        if not em_detected:
+        if not euclid_result.observable:
             continue
 
         # ------------------------------------------------------------
-        # GW SAMPLING + LVK DETECTION (retry until num_gw images detected)
+        # GW SAMPLING + LVK DETECTION
+        # (retry until the detection requirement is met)
         # ------------------------------------------------------------
         gw_start = time.perf_counter()
         gw_attempts = 0
@@ -254,21 +333,13 @@ def run(
 
             gw = gw_population.sample(size=1)
 
-            try:
-                lensed = gw_population.lens(
-                    gw=gw,
-                    lens=lens,
-                    x_gw=position.x_gw,
-                    y_gw=position.y_gw,
-                    z_source=source.z_source,
-                )
-            except RuntimeError as e:
-                # Lens equation solver produced an unusable image count
-                # (0 images, or >5 images) for this random GW draw.
-                continue
-
-            if lensed.n_images < num_gw:
-                continue
+            lensed = gw_population.apply_lensing(
+                gw=gw,
+                solution=solution,
+                x_gw=position.x_gw,
+                y_gw=position.y_gw,
+                z_source=source.z_source,
+            )
 
             lvk_result = lvk_detector.calculate_snr(
                 gw=gw,
@@ -302,17 +373,30 @@ def run(
         gw_prms = gw.to_dict()
         gw_prms["x_gw"] = position.x_gw
         gw_prms["y_gw"] = position.y_gw
+
+        # --- selection / cross-section bookkeeping -------------------
+        # caustic_area is the area of the region the BBH was drawn from,
+        # i.e. the cross-section for "produces >= region_min_images".
+        gw_prms["sampling_region"] = region_label
+        gw_prms["region_min_images"] = region_min
+        gw_prms["min_detected_images_required"] = min_detected_images
+        gw_prms["exact_detected_required"] = exact_detected
+        gw_prms["sample_is_complete"] = complete
+        gw_prms["duty_cycles"] = list(duty_cycles)
+        gw_prms["min_detectors"] = min_detectors
         gw_prms["caustic_area"] = position.caustic_area
         gw_prms["log_p_cross_sec"] = log_cross_section(position.caustic_area)
 
-        # LVK detection summary. snr_net_ideal is the network SNR
-        # before applying detector availability; snr_net is the SNR
-        # after availability is applied. Here all detectors are always
-        # online, so these two arrays should be identical.
+        # --- images PRODUCED by the geometry vs images DETECTED ------
+        gw_prms["n_images_produced"] = solution.n_images
+        gw_prms["n_images_bright"] = solution.n_images_above(
+            min_abs_magnification
+        )
         gw_prms["n_images_detected"] = lvk_result.n_detected
         gw_prms["event_detected"] = lvk_result.detected
         gw_prms["detected_indices"] = lvk_result.detected_indices
         gw_prms["detected_mask"] = lvk_result.detected_mask
+
         gw_prms["snr_net_ideal"] = lvk_result.snr_net_ideal
         gw_prms["snr_net"] = lvk_result.snr_net
         gw_prms["snr_H1"] = lvk_result.snr_H1
@@ -372,11 +456,21 @@ def run(
     return n_det, system_attempts
 
 
+def _probability(text):
+    """argparse type: float in [0, 1]."""
+    value = float(text)
+    if not 0.0 <= value <= 1.0:
+        raise argparse.ArgumentTypeError(
+            f"duty cycle must be between 0 and 1, got {value}"
+        )
+    return value
+
+
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(
         description=(
-            "Simulate joint EM (Euclid) + GW (LVK) detection of "
-            "quadruply-imaged lensed BBH mergers using the mml package."
+            "Simulate joint EM (Euclid) + GW (LVK) detection of strongly "
+            "lensed BBH mergers using the mml package."
         )
     )
 
@@ -386,38 +480,63 @@ def parse_args(argv=None):
         help="Job/task index (also used as an RNG seed offset).",
     )
     parser.add_argument(
-        "--num-gw",
+        "--min-detected-images",
+        "--num-gw",  # deprecated alias of the old single option
+        dest="min_detected_images",
         type=int,
-        default=4,
-        help="Number of lensed GW images required for detection (default: 4).",
+        default=2,
+        help=(
+            "Number of lensed GW images that must be detectable "
+            "(default: 2). Detection requirement only; does not by itself "
+            "fix the lensing geometry (see --sampling-region)."
+        ),
     )
     parser.add_argument(
-        "--n-systems",
-        type=int,
-        default=100,
-        help="Number of detected systems to generate (default: 100).",
+        "--sampling-region",
+        choices=["auto", "double", "triple", "quad"],
+        default="auto",
+        help=(
+            "Source-plane region the BBH is drawn from: double (>=2 "
+            "images), triple (>=3), quad (>=4). 'auto' (default) picks the "
+            "smallest region that is complete for --min-detected-images."
+        ),
     )
+    parser.add_argument(
+        "--exact-detected",
+        action="store_true",
+        help="Require exactly (not at least) --min-detected-images detected.",
+    )
+    parser.add_argument(
+        "--min-detectors",
+        type=int,
+        default=3,
+        help="Operating detectors that must each exceed the per-detector "
+        "SNR threshold for an image to count (default: 3).",
+    )
+    parser.add_argument(
+        "--duty-cycles",
+        nargs=3,
+        type=_probability,
+        metavar=("H1", "L1", "V1"),
+        default=[1.0, 1.0, 1.0],
+        help=(
+            "Three detector duty cycles (probabilities between 0 and 1), "
+            "in H1 L1 V1 order. Default: 1.0 1.0 1.0. "
+            "Each detector's availability is sampled independently "
+            "for every image."
+        ),
+    )
+    parser.add_argument("--n-systems", type=int, default=100)
     parser.add_argument(
         "--out-dir",
         type=str,
-        default="lens_catalog/new_quad_im",
-        help="Base output directory (default: lens_catalog/quad_im).",
+        default=None,
+        help="Base output directory (default: encodes region and detection "
+        "requirement, e.g. lens_catalog/double_region_ge2det).",
     )
-    parser.add_argument(
-        "--max-system-attempts",
-        type=int,
-        default=100_000,
-    )
-    parser.add_argument(
-        "--max-lens-attempts",
-        type=int,
-        default=1_000,
-    )
-    parser.add_argument(
-        "--max-gw-attempts",
-        type=int,
-        default=2_000,
-    )
+    parser.add_argument("--max-system-attempts", type=int, default=100_000)
+    parser.add_argument("--max-lens-attempts", type=int, default=1_000)
+    parser.add_argument("--max-gw-attempts", type=int, default=2_000)
 
     return parser.parse_args(argv)
 
@@ -427,10 +546,14 @@ if __name__ == "__main__":
 
     run(
         job_id=args.job_id,
-        num_gw=args.num_gw,
+        min_detected_images=args.min_detected_images,
+        sampling_region=args.sampling_region,
+        exact_detected=args.exact_detected,
         n_systems=args.n_systems,
         out_dir=args.out_dir,
         max_system_attempts=args.max_system_attempts,
         max_lens_attempts=args.max_lens_attempts,
         max_gw_attempts=args.max_gw_attempts,
+        min_detectors=args.min_detectors,
+        duty_cycles=args.duty_cycles,
     )

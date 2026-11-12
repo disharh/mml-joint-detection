@@ -740,3 +740,36 @@ def test_invalid_num_detected_images_raises_value_error(
 ):
     with pytest.raises(ValueError):
         LVKDetector(num_detected_images=num_detected_images)
+
+# ============================================================
+# At least vs exactly K detectable images
+# ============================================================
+
+def test_exact_num_images_rejects_extra_detectable_images(monkeypatch):
+    results = make_snr_results(3)  # all three images are detectable
+
+    at_least, _, _ = run_detector(
+        monkeypatch, n_images=3, results=results,
+        detector_kwargs={"num_detected_images": 2},
+    )
+    exact, _, _ = run_detector(
+        monkeypatch, n_images=3, results=make_snr_results(3),
+        detector_kwargs={"num_detected_images": 2, "exact_num_images": True},
+    )
+
+    assert at_least.n_detected == exact.n_detected == 3
+    assert at_least.detected is True
+    assert exact.detected is False
+
+
+def test_exact_num_images_accepts_exact_match(monkeypatch):
+    results = [
+        make_snr_result(net=15, h1=10, l1=8, v1=5),
+        make_snr_result(net=12, h1=8, l1=7, v1=5),
+        make_snr_result(net=3, h1=2, l1=1, v1=1),
+    ]
+    result, _, _ = run_detector(
+        monkeypatch, n_images=3, results=results,
+        detector_kwargs={"num_detected_images": 2, "exact_num_images": True},
+    )
+    assert result.detected is True

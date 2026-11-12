@@ -88,6 +88,27 @@ class LensedGWParams:
     n_images: int
 
 
+@dataclass
+class LensImageSolution:
+    """Lens-equation solution for one (lens, source-plane position) pair.
+
+    Independent of the BBH parameters, so it can be computed once per system.
+    """
+
+    x_image: np.ndarray
+    y_image: np.ndarray
+    magnifications: np.ndarray
+    time_delays: np.ndarray  # [s], relative to the first-arriving image
+    morse_phase: np.ndarray
+    n_images: int
+
+    def n_images_above(self, min_abs_magnification):
+        """Number of images with |mu| >= ``min_abs_magnification``."""
+        return int(
+            np.sum(np.abs(self.magnifications) >= min_abs_magnification)
+        )
+
+
 # ---------------------------------------------------------------------------
 # GW population
 # ---------------------------------------------------------------------------
@@ -208,40 +229,26 @@ class GWPopulation:
 
         return morse
 
-    def lens(
+    def solve_images(
         self,
-        gw,
         lens,
         x_gw,
         y_gw,
         z_source,
     ):
         """
-        Lens a GW source using a sampled lens galaxy.
+        Solve the lens equation once for a given lens and BBH position.
 
-        Parameters
-        ----------
-        gw : GWParams
-            Sampled GW parameters.
+        The image positions, magnifications, time delays and Morse phases
+        depend only on the lens and the source-plane position, **not** on the
+        BBH parameters. Solve once per system, then re-use the solution for
+        every BBH parameter draw via :meth:`apply_lensing`.
 
-        lens : LensParams
-            Sampled lens parameters.
-
-        x_gw, y_gw : float
-            GW source position in arcseconds.
-
-        z_source : float
-            Source redshift.
-
-        Returns
-        -------
-        LensedGWParams
-            Effective GW parameters for all lensed images.
+        Raises
+        ------
+        RuntimeError
+            If the solver returns no images or more than five.
         """
-
-        if gw.luminosity_distance is None:
-            print("Assuming z_source = z_gw to calculate GW luminosity distance..")
-            gw.luminosity_distance = cosmo.luminosity_distance([z_source]).value
 
         kwargs_lens = lens.to_lenstronomy()
 
@@ -290,7 +297,7 @@ class GWPopulation:
             kwargs_lens=kwargs_lens,
         )
 
-        delays = (delays - delays.min()) * 86400.0
+        delays = (delays - delays.min()) * 86400.0  # days -> seconds
 
         hessian = lens_model.hessian(
             x_image,
@@ -298,49 +305,80 @@ class GWPopulation:
             kwargs_lens,
         )
 
-        morse_phase = self._morse_phase(hessian)
+        return LensImageSolution(
+            x_image=np.asarray(x_image),
+            y_image=np.asarray(y_image),
+            magnifications=np.asarray(magnifications),
+            time_delays=np.asarray(delays),
+            morse_phase=self._morse_phase(hessian),
+            n_images=n_images,
+        )
+
+    def apply_lensing(
+        self,
+        gw,
+        solution,
+        x_gw,
+        y_gw,
+        z_source,
+    ):
+        """
+        Compute the effective GW parameters of every image of a pre-solved
+        lens configuration (see :meth:`solve_images`).
+        """
+
+        if gw.luminosity_distance is None:
+            gw.luminosity_distance = cosmo.luminosity_distance(
+                [z_source]
+            ).value
 
         arcsec_to_rad = 1.0 / 206265.0
 
-        dx = (
-            np.asarray(x_image) - x_gw
-        ) * arcsec_to_rad
+        dx = (solution.x_image - x_gw) * arcsec_to_rad
+        dy = (solution.y_image - y_gw) * arcsec_to_rad
 
-        dy = (
-            np.asarray(y_image) - y_gw
-        ) * arcsec_to_rad
-
-        mu = np.abs(magnifications)
-
-        effective_luminosity_distance = (
-            gw.luminosity_distance / np.sqrt(mu)
-        ).reshape(-1)
-
-        effective_geocent_time = (
-            gw.geocent_time + delays
-        ).reshape(-1)
-
-        effective_phase = (
-            gw.phase - morse_phase
-        ).reshape(-1)
-
-        effective_ra = (
-            gw.ra + dx / np.cos(gw.dec)
-        ).reshape(-1)
-
-        effective_dec = (
-            gw.dec + dy
-        ).reshape(-1)
+        mu = np.abs(solution.magnifications)
 
         return LensedGWParams(
-            effective_luminosity_distance=effective_luminosity_distance,
-            effective_geocent_time=effective_geocent_time,
-            effective_phase=effective_phase,
-            effective_ra=effective_ra,
-            effective_dec=effective_dec,
-            magnifications=np.asarray(magnifications),
-            time_delays=np.asarray(delays),
-            x_image=np.asarray(x_image),
-            y_image=np.asarray(y_image),
-            n_images=n_images,
+            effective_luminosity_distance=(
+                gw.luminosity_distance / np.sqrt(mu)
+            ).reshape(-1),
+            effective_geocent_time=(
+                gw.geocent_time + solution.time_delays
+            ).reshape(-1),
+            effective_phase=(
+                gw.phase - solution.morse_phase
+            ).reshape(-1),
+            effective_ra=(gw.ra + dx / np.cos(gw.dec)).reshape(-1),
+            effective_dec=(gw.dec + dy).reshape(-1),
+            magnifications=solution.magnifications,
+            time_delays=solution.time_delays,
+            x_image=solution.x_image,
+            y_image=solution.y_image,
+            n_images=solution.n_images,
         )
+
+    def lens(
+        self,
+        gw,
+        lens,
+        x_gw,
+        y_gw,
+        z_source,
+    ):
+        """
+        Lens a GW source using a sampled lens galaxy.
+
+        Convenience wrapper: ``solve_images`` followed by ``apply_lensing``.
+        When many BBH parameter draws share one lens and one position, call
+        those two methods separately so the lens equation is solved once.
+
+        Returns
+        -------
+        LensedGWParams
+            Effective GW parameters for all lensed images.
+        """
+
+        solution = self.solve_images(lens, x_gw, y_gw, z_source)
+
+        return self.apply_lensing(gw, solution, x_gw, y_gw, z_source)

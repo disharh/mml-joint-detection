@@ -23,10 +23,10 @@ cd mml-joint-detection
 
 ### 2. Create and activate a clean environment
 
-This example uses Python 3.11:
+This example uses Python 3.10:
 
 ```bash
-conda create -n mml-test python=3.11
+conda create -n mml-test python=3.10
 conda activate mml-test
 ```
 

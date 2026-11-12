@@ -9,22 +9,78 @@ lensing calculations, detector response, simulation utilities, and output I/O.
 
 ## Installation
 
-Clone the repository and create/activate an environment containing the project
-dependencies. From the repository root, install the package in editable mode:
+The following procedure checks that the repository can be cloned, installed in a
+clean Python environment, and used to launch the example simulation.
+
+### 1. Clone the repository
 
 ```bash
+git clone --branch refactor/project-structure \
+    https://github.com/disharh/mml-joint-detection.git
+
+cd mml-joint-detection
+```
+
+### 2. Create and activate a clean environment
+
+This example uses Python 3.11:
+
+```bash
+conda create -n mml-test python=3.11
+conda activate mml-test
+```
+
+### 3. Install the package
+
+Upgrade `pip` and install the repository in editable mode:
+
+```bash
+python -m pip install --upgrade pip
 python -m pip install -e .
 ```
 
-For development and tests, install the development extras if they are defined
-in `pyproject.toml`, then run:
+Editable installation makes the `mml` package importable without setting
+`PYTHONPATH` manually.
+
+### 4. Check the package import
 
 ```bash
-python -m pytest
+python -c "import mml; print(mml.__file__)"
 ```
 
-Editable installation means changes under `src/mml/` are available immediately
-without setting `PYTHONPATH`.
+The output should point to the `src/mml/` directory in the cloned repository.
+
+### 5. Check source-population model loading
+
+The default source-population sampler loads a trained density-estimation model.
+Check that the model is present in the repository at the path expected by
+`Source`:
+
+```bash
+python -c "from mml.populations import Source; s = Source(); print(s.model_path)"
+```
+
+If this command raises `FileNotFoundError`, check that the trained model files
+are included in the clone and stored in the expected package data directory.
+
+### 6. Check the example command-line interface
+
+Run the help command to display the available arguments:
+
+```bash
+python simulate_lens_systems.py --help
+```
+
+### 7. Run a one-system smoke test
+
+Try generating one detected lens system with reduced attempt limits:
+
+```bash
+python simulate_lens_systems.py 0 \
+    --n-systems 1 \
+```
+The simulation generates interpolators (for the first time), performs lensing calculations, Euclid image simulations, and
+GW signal-to-noise calculations, so even a one-system run may take some time.
 
 ## Package layout
 
@@ -83,15 +139,3 @@ outside the repository, by default under:
 ```
 
 Pass `cache_file=...` to override the cache location explicitly.
-
-
-## Tests
-
-Run the test suite from the repository root:
-
-```bash
-python -m pytest -v
-```
-
-The package uses a `src/` layout. Import modules through `mml`, rather than
-running files inside `src/mml/` directly as standalone scripts.

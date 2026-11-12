@@ -1,18 +1,72 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+
 [project]
-name = "multimessenger-search"
+name = "mml-joint-detection"
 version = "0.1.0"
-description = "Add your description here"
+description = "Joint gravitational-wave and electromagnetic detection of strongly lensed BBH mergers"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+
 dependencies = [
     "astropy>=7.2.0",
+    "torch==2.5.0",
     "denmarf>=0.3.2",
-    "dvc-ssh>=4.2.2",
-    "jupyter>=1.1.1",
+    "gwsnr",
     "lenstronomy>=1.13.5",
     "ler>=0.5.9",
     "numdifftools>=0.9.42",
     "numpy>=2.4.3",
-    "pandas>=3.0.1",
-    "torch==2.5.0",
+    "scipy",
+    "scikit-learn",
+    "matplotlib",
+    "numba",
+    "shapely",
+    "tqdm",
+    "PyYAML",
 ]
+
+
+[project.optional-dependencies]
+
+dev = [
+    "pytest",
+    "pytest-cov",
+    "ruff",
+    "build",
+]
+
+notebooks = [
+    "jupyter>=1.1.1",
+    "ipykernel",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["mml*"]
+
+
+[tool.setuptools.package-data]
+mml = [
+    "data/trained_models/*.pkl",
+]
+
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
+
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]

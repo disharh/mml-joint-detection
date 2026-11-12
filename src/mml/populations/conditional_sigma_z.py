@@ -27,7 +27,7 @@ def precompute_M_z(
 
     if cache_file is None:
         cache_file = (
-            get_cache_dir("mml")
+            get_cache_dir("mml-joint-detection")
             / "lens_population"
             / "Mz_grid.npz"
         )
@@ -210,7 +210,7 @@ def sample_sigma_given_zl(
 def sample_sigma_zl_given_zs(
     z_source,
     size=None,
-    cache_file="Mz_grid.npz",
+    cache_file=None,
     sigma_min=60,
     sigma_max=600,
     sigma_n=2000,

@@ -1,4 +1,8 @@
 __pycache__/
+*.egg-info/
+*.dist-info/
+build/
+dist/
 *.py[cod]
 interpolator_json/
 .dvc/

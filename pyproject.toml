@@ -8,7 +8,7 @@ name = "mml-joint-detection"
 version = "0.1.0"
 description = "Joint gravitational-wave and electromagnetic detection of strongly lensed BBH mergers"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11,<3.13"
 license = { file = "LICENSE" }
 
 dependencies = [

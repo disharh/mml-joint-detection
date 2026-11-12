@@ -46,7 +46,7 @@ tests/              # Automated tests
 ## Source population models
 
 `mml.populations.Source` uses pre-trained `denmarf`/MAF models. By default,
-the following files are expected directly inside `src/mml/data/`:
+the following files are expected directly inside `src/mml/data/trained_models/`:
 
 - `trained_de_weighted_mass_b32_h128_e1000_sizen.pkl`
 - `trained_de_b32_h128_e1000_bdef_wbounds.pkl`
@@ -82,9 +82,6 @@ outside the repository, by default under:
 ~/.cache/mml/lens_population/
 ```
 
-Cache filenames encode the redshift and velocity-dispersion grid limits and
-resolutions. The cache also stores these values as metadata and is reused only
-when all parameters match. Incompatible or older cache files are regenerated.
 Pass `cache_file=...` to override the cache location explicitly.
 
 

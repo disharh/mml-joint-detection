@@ -12,7 +12,6 @@ requires-python = ">=3.10,<3.13"
 license = { file = "LICENSE" }
 
 dependencies = [
-    "astropy>=7.2.0",
     "torch==2.5.0",
     "denmarf>=0.3.2",
     "gwsnr",
@@ -21,6 +20,7 @@ dependencies = [
     "numdifftools>=0.9.42",
     "numpy>=2.4.3",
     "scipy",
+    "astropy",
     "scikit-learn",
     "matplotlib",
     "numba",
